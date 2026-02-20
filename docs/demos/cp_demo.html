@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Visual Analyzer (ABCJS)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+    <style>
+        :root {
+            --primary: #0f766e; --primary-light: #ccfbf1; --bg: #f1f5f9; --surface: #ffffff; 
+            --border: #cbd5e1; --text: #1e293b; --error: #e11d48; --success: #059669;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; justify-content: center; margin: 0;}
+        .app-container { display: grid; grid-template-columns: 320px 1fr; gap: 20px; max-width: 1200px; width: 100%; }
+        @media (max-width: 800px) { .app-container { grid-template-columns: 1fr; } }
+        .panel { background: var(--surface); padding: 20px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column;}
+        h2 { margin-top: 0; color: var(--primary); font-size: 1.25rem; border-bottom: 2px solid var(--primary-light); padding-bottom: 10px; }
+        label { font-weight: 600; font-size: 0.85rem; color: #475569; margin-top: 15px; display: block; }
+        select, textarea, input { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; margin-top: 5px; box-sizing: border-box; font-family: inherit; }
+        textarea { font-family: 'Courier New', monospace; min-height: 80px; resize: vertical; }
+        textarea:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+        
+        #paper { background: white; overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); min-height: 250px; display: flex; justify-content: center; padding: 20px 0;}
+        /* Ensure our injected SVG overlays don't get clipped */
+        #paper svg { overflow: visible !important; }
+
+        /* Rules Dropdown */
+        details.rules-box { background: var(--primary-light); border: 1px solid #99f6e4; border-radius: 8px; margin-bottom: 15px; }
+        details.rules-box summary { padding: 12px; font-weight: bold; color: var(--primary); cursor: pointer; list-style: none; outline: none; }
+        details.rules-box summary::-webkit-details-marker { display: none; }
+        details.rules-box summary::before { content: "📘 "; }
+        .rules-content { padding: 0 15px 15px 15px; font-size: 0.85rem; color: #334155; line-height: 1.5; }
+        .rules-content ul { padding-left: 20px; margin: 5px 0; }
+
+        .error-list { margin-top: 15px; padding: 15px; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; }
+        .error-item { color: var(--error); font-size: 0.9rem; margin-bottom: 5px; display: flex; align-items: flex-start; }
+        .error-item::before { content: "✗"; margin-right: 8px; font-weight: bold; }
+        .success-box { margin-top: 15px; padding: 15px; background: #ecfdf5; border: 1px solid #a7f3d0; color: var(--success); font-weight: bold; border-radius: 8px; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    
+    <!-- Controls Sidebar -->
+    <div class="panel">
+        <h2>Editor</h2>
+
+        <details class="rules-box">
+            <summary>Rules of First Species</summary>
+            <div class="rules-content">
+                <strong>Harmonic (Vertical):</strong>
+                <ul>
+                    <li>Only consonances (1, 3, 5, 6, 8, 10).</li>
+                    <li>No dissonances (2, 4, TT, 7).</li>
+                    <li>Start on 1, 5, 8 (CP above) or 1, 8 (CP below). End on 1 or 8.</li>
+                    <li>No Parallel 5ths or 8ves.</li>
+                    <li>No Direct 5ths/8ves (approaching perfect interval by similar motion with leap in upper voice).</li>
+                </ul>
+                <strong>Melodic (Horizontal in CP):</strong>
+                <ul>
+                    <li>Max leap of an octave.</li>
+                    <li>No dissonant leaps (Tritone, 7th).</li>
+                    <li>Avoid repeating the exact same note.</li>
+                </ul>
+            </div>
+        </details>
+        
+        <label>Presets (Fux's Gradus ad Parnassum)</label>
+        <select id="preset-select">
+            <option value="custom">Custom Input</option>
+            <optgroup label="Cantus Firmus Below (CP in Treble)">
+                <option value="dorian_below">Dorian Mode</option>
+                <option value="phrygian_below">Phrygian Mode</option>
+                <option value="lydian_below">Lydian Mode</option>
+                <option value="mixolydian_below">Mixolydian Mode</option>
+                <option value="aeolian_below">Aeolian Mode</option>
+                <option value="ionian_below">Ionian Mode (C Major)</option>
+            </optgroup>
+            <optgroup label="Cantus Firmus Above (CP in Bass)">
+                <option value="dorian_above">Dorian Mode</option>
+                <option value="phrygian_above">Phrygian Mode</option>
+                <option value="lydian_above">Lydian Mode</option>
+                <option value="mixolydian_above">Mixolydian Mode</option>
+                <option value="aeolian_above">Aeolian Mode</option>
+                <option value="ionian_above">Ionian Mode (C Major)</option>
+            </optgroup>
+        </select>
+
+        <label>Treble Staff (Top)</label>
+        <textarea id="treble-input" spellcheck="false">D A G F E A c B A c D</textarea>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Use ABC: C, D (Lower Treble) | c, d (Upper Treble).</div>
+
+        <label>Bass Staff (Bottom)</label>
+        <textarea id="bass-input" spellcheck="false">D, F, E, D, G, F, A, G, F, E, D,</textarea>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 5px;">Use ABC: C,, D,, (Low Bass) | C, D, (Mid Bass).</div>
+
+        <label>Which voice is the Counterpoint (CP)?</label>
+        <select id="cp-voice">
+            <option value="treble">Treble (Top Voice)</option>
+            <option value="bass">Bass (Bottom Voice)</option>
+        </select>
+
+        <div id="error-container" class="error-list"></div>
+        <div id="success-box" class="success-box">Perfect! No First Species violations.</div>
+    </div>
+
+    <!-- Output Panel -->
+    <div class="panel">
+        <h2>Professional Output (with Overlay)</h2>
+        <div id="paper"></div>
+    </div>
+
+</div>
+
+<script>
+    // --- MUSIC LOGIC & NATIVE ABC ENGINE ---
+
+    // Note: In strict ABC notation, C=C4, c=C5, C,=C3, C,,=C2. 
+    // These presets explicitly place the notes perfectly within their respective staves.
+    const presets = {
+        // Mode CF Below (CP in Treble)
+        dorian_below: { treble: "D A G F E A c B A c D", bass: "D, F, E, D, G, F, A, G, F, E, D,", cp: "treble" },
+        phrygian_below: { treble: "E A B c B A G F E", bass: "E, F, G, A, G, F, E, D, E,", cp: "treble" },
+        lydian_below: { treble: "c B c e d c f e f g f", bass: "F, G, A, G, F, E, D, C, D, E, F,", cp: "treble" },
+        mixolydian_below: { treble: "G F D E F E G c B A G", bass: "G, A, B, C D C B, A, G, F, G,", cp: "treble" },
+        aeolian_below: { treble: "A G E F G A c B A G A", bass: "A, B, C D E F E D C B, A,", cp: "treble" },
+        ionian_below: { treble: "c B c e c G c B A G B c", bass: "C, D, E, C, F, E, A, G, F, E, D, C,", cp: "treble" },
+        
+        // Mode CF Above (CP in Bass)
+        dorian_above: { treble: "D F E D G F A G F E D", bass: "D, A,, C, B,, E, D, F, E, D, A,, D,", cp: "bass" },
+        phrygian_above: { treble: "E F G A G F E D E", bass: "E, A,, E, C, B,, A,, G,, F,, E,,", cp: "bass" },
+        lydian_above: { treble: "F G A G F E D C D E F", bass: "F, E, F, C, A,, C, B,, E, D, C, F,,", cp: "bass" },
+        mixolydian_above: { treble: "G A B c d c B A G F G", bass: "G, F, D, C, B,, A,, G,, C, B,, D, G,,", cp: "bass" },
+        aeolian_above: { treble: "A B c d e f e d c B A", bass: "A, G, A, F, C, D, C, B,, E, D, A,,", cp: "bass" },
+        ionian_above: { treble: "c d e c f e a g f e d c", bass: "C, G,, C, A,, F,, C, F,, E,, D,, C,, G,, C,,", cp: "bass" }
+    };
+
+    function abcToMidi(noteStr) {
+        if (!noteStr) return null;
+        const match = noteStr.match(/([_^\=]*)([A-Ga-g])([,']*)/);
+        if (!match) return null;
+
+        const acc = match[1], letter = match[2], oct = match[3];
+        let midi = { 'c':0, 'd':2, 'e':4, 'f':5, 'g':7, 'a':9, 'b':11 }[letter.toLowerCase()];
+
+        // Standard ABC mapping for octaves: Uppercase C = C4 (Midi 60)
+        if (letter === letter.toUpperCase()) midi += 60; 
+        else midi += 72; // Lowercase c = C5 (Midi 72)
+
+        for (let char of oct) { if (char === ',') midi -= 12; if (char === "'") midi += 12; }
+        for (let char of acc) { if (char === '^') midi += 1; if (char === '_') midi -= 1; }
+        return midi;
+    }
+
+    function getIntervalName(semitones) {
+        return { 0:"8", 1:"2", 2:"2", 3:"3", 4:"3", 5:"4", 6:"TT", 7:"5", 8:"6", 9:"6", 10:"7", 11:"7" }[Math.abs(semitones)%12] || "?";
+    }
+    function isConsonant(semitones) { return [0, 3, 4, 7, 8, 9].includes(Math.abs(semitones) % 12); }
+    function isPerfect(semitones) { return [0, 7].includes(Math.abs(semitones) % 12); }
+
+    function analyzeAndGenerate(trebleRaw, bassRaw, cpVoice) {
+        const trebleArr = trebleRaw.trim().split(/\s+/).filter(n => n);
+        const bassArr = bassRaw.trim().split(/\s+/).filter(n => n);
+        const minLen = Math.min(trebleArr.length, bassArr.length);
+
+        const outTreble = [], outBass = [], lyrics = [];
+        const visuals = [], txtErrors = [];
+
+        let prevData = null;
+
+        for (let i = 0; i < minLen; i++) {
+            const trebleMidi = abcToMidi(trebleArr[i]);
+            const bassMidi = abcToMidi(bassArr[i]);
+            
+            if (trebleMidi === null || bassMidi === null) {
+                outTreble.push(trebleArr[i]); outBass.push(bassArr[i]); lyrics.push("?");
+                continue;
+            }
+
+            const semis = trebleMidi - bassMidi;
+            const intName = getIntervalName(semis);
+            lyrics.push(intName);
+
+            let tNote = trebleArr[i], bNote = bassArr[i];
+            let errorTags = [];
+
+            // 1. Voice Crossing
+            if (semis <= 0) {
+                errorTags.push("Cross"); txtErrors.push(`Beat ${i+1}: Voice Crossing`);
+                visuals.push({ type: 'verticalOval', index: i });
+            }
+
+            // 2. Consonance
+            if (!isConsonant(semis) && semis > 0) {
+                errorTags.push("Diss"); txtErrors.push(`Beat ${i+1}: Vertical Dissonance (${intName})`);
+                visuals.push({ type: 'verticalOval', index: i });
+            }
+
+            // Horizontal Rules
+            if (i > 0) {
+                const dTreble = trebleMidi - prevData.t;
+                const dBass = bassMidi - prevData.b;
+                const dCP = cpVoice === 'treble' ? dTreble : dBass;
+                const cpVoiceIdx = cpVoice === 'treble' ? 0 : 1; 
+
+                // Melodic Errors
+                if (dCP === 0) {
+                    errorTags.push("Repeat"); txtErrors.push(`Beat ${i+1}: Repeated note in CP`);
+                    visuals.push({ type: 'circle', voiceIdx: cpVoiceIdx, index: i });
+                } else if (Math.abs(dCP) > 12) {
+                    errorTags.push("Leap>8ve"); txtErrors.push(`Beat ${i}-${i+1}: Leap > octave`);
+                    visuals.push({ type: 'melodicLine', voiceIdx: cpVoiceIdx, fromIndex: i-1, toIndex: i });
+                } else if ([6, 10, 11].includes(Math.abs(dCP))) {
+                    errorTags.push("Bad Leap"); txtErrors.push(`Beat ${i}-${i+1}: Dissonant melodic leap`);
+                    visuals.push({ type: 'melodicLine', voiceIdx: cpVoiceIdx, fromIndex: i-1, toIndex: i });
+                }
+
+                // Parallels
+                if (semis > 0 && isPerfect(semis) && isPerfect(prevData.s) && (semis%12 === prevData.s%12) && dTreble !== 0 && dBass !== 0) {
+                    const pType = semis%12 === 0 ? "8ves" : "5ths";
+                    errorTags.push(`Par ${pType}`); txtErrors.push(`Beat ${i}-${i+1}: Parallel ${pType}`);
+                    visuals.push({ type: 'parallelLines', fromIndex: i-1, toIndex: i });
+                    
+                    // Native ABC Red Coloring
+                    outTreble[i-1] = `!color:red!${outTreble[i-1].replace('!color:red!', '')}`;
+                    outBass[i-1] = `!color:red!${outBass[i-1].replace('!color:red!', '')}`;
+                }
+
+                // Direct
+                const isSimilar = (dTreble > 0 && dBass > 0) || (dTreble < 0 && dBass < 0);
+                if (semis > 0 && isPerfect(semis) && isSimilar && Math.abs(dTreble) > 2) {
+                    errorTags.push(`Dir ${intName}`); txtErrors.push(`Beat ${i}-${i+1}: Direct ${intName}`);
+                    visuals.push({ type: 'directLines', fromIndex: i-1, toIndex: i });
+                }
+            }
+
+            // Begin/End
+            if (i === 0 && semis > 0) {
+                const isPerf = isPerfect(semis), mod = semis % 12;
+                if (cpVoice === 'treble' && !isPerf) {
+                    errorTags.push("Start"); txtErrors.push(`Beat 1: Must start on 1, 5, or 8`);
+                    visuals.push({ type: 'verticalOval', index: i });
+                } else if (cpVoice === 'bass' && mod !== 0) {
+                    errorTags.push("Start"); txtErrors.push(`Beat 1: Must start on 1 or 8`);
+                    visuals.push({ type: 'verticalOval', index: i });
+                }
+            }
+            if (i === minLen - 1 && minLen > 2 && semis > 0 && semis % 12 !== 0) {
+                errorTags.push("End"); txtErrors.push(`Beat ${i+1}: Must end on 1 or 8`);
+                visuals.push({ type: 'verticalOval', index: i });
+            }
+
+            if (errorTags.length > 0) {
+                bNote = `!color:red!${bNote}`;
+                tNote = `"^${errorTags.join(', ')}"!color:red!${tNote}`;
+            }
+
+            outTreble.push(tNote);
+            outBass.push(bNote);
+            prevData = { t: trebleMidi, b: bassMidi, s: semis };
+        }
+
+        let abc = `X:1\nM:none\nL:1/1\nK:C\n%%staves 1 2\n`;
+        // We can safely use bar lines now since the SVG selector fetches notes linearly
+        abc += `V: 1 clef=treble name="${cpVoice === 'treble' ? 'CP' : 'CF'}"\n${outTreble.join(" | ")} |]\n`;
+        abc += `V: 2 clef=bass name="${cpVoice === 'bass' ? 'CP' : 'CF'}"\n${outBass.join(" | ")} |]\n`;
+        abc += `w: ${lyrics.join(" | ")}\n`;
+
+        return { abcString: abc, visuals, txtErrors };
+    }
+
+    // --- SVG OVERLAY ENGINE ---
+    
+    function drawOverlays(visuals) {
+        const svg = document.querySelector('#paper svg');
+        if (!svg) return;
+
+        // Fetch Global CTM to properly map visual screen pixels back to internal SVG coordinates
+        const screenCTM = svg.getScreenCTM();
+        if (!screenCTM) return;
+        const invSvgCTM = screenCTM.inverse();
+        
+        function getNoteCenter(voiceIdx, noteIdx) {
+            const notes = Array.from(svg.querySelectorAll(`.abcjs-note.abcjs-v${voiceIdx}`));
+            if (!notes || noteIdx >= notes.length) return null;
+            
+            const noteGroup = notes[noteIdx];
+            // Ensure we aim for the notehead, avoiding the stem bounding box if present
+            const head = noteGroup.querySelector('.abcjs-notehead') || noteGroup.querySelector('path') || noteGroup;
+            
+            const rect = head.getBoundingClientRect();
+            
+            // Map CSS pixel coordinates back directly into SVG viewBox coordinates
+            let pt = svg.createSVGPoint();
+            pt.x = rect.left + rect.width / 2;
+            pt.y = rect.top + rect.height / 2;
+            return pt.matrixTransform(invSvgCTM);
+        }
+
+        function createSVGElement(tag, attrs) {
+            const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+            for (let k in attrs) el.setAttribute(k, attrs[k]);
+            return el;
+        }
+
+        visuals.forEach(vis => {
+            if (vis.type === 'circle') {
+                const pos = getNoteCenter(vis.voiceIdx, vis.index);
+                if (pos) {
+                    const circle = createSVGElement('circle', {
+                        cx: pos.x, cy: pos.y, r: 14,
+                        fill: 'rgba(225, 29, 72, 0.15)', stroke: '#e11d48', 'stroke-width': '2'
+                    });
+                    svg.appendChild(circle);
+                }
+            }
+            else if (vis.type === 'verticalOval') {
+                const pTop = getNoteCenter(0, vis.index);
+                const pBot = getNoteCenter(1, vis.index);
+                if (pTop && pBot) {
+                    const midY = (pTop.y + pBot.y) / 2;
+                    const ry = Math.abs(pTop.y - pBot.y) / 2 + 15;
+                    const ellipse = createSVGElement('ellipse', {
+                        cx: pTop.x, cy: midY, rx: 16, ry: ry,
+                        fill: 'rgba(225, 29, 72, 0.1)', stroke: '#e11d48', 'stroke-width': '2', 'stroke-dasharray': '5,5'
+                    });
+                    svg.appendChild(ellipse);
+                }
+            }
+            else if (vis.type === 'melodicLine') {
+                const p1 = getNoteCenter(vis.voiceIdx, vis.fromIndex);
+                const p2 = getNoteCenter(vis.voiceIdx, vis.toIndex);
+                if (p1 && p2) {
+                    const line = createSVGElement('line', {
+                        x1: p1.x + 8, y1: p1.y, x2: p2.x - 8, y2: p2.y,
+                        stroke: '#e11d48', 'stroke-width': '3', 'stroke-dasharray': '5,3'
+                    });
+                    svg.appendChild(line);
+                }
+            }
+            else if (vis.type === 'parallelLines' || vis.type === 'directLines') {
+                const pTop1 = getNoteCenter(0, vis.fromIndex), pTop2 = getNoteCenter(0, vis.toIndex);
+                const pBot1 = getNoteCenter(1, vis.fromIndex), pBot2 = getNoteCenter(1, vis.toIndex);
+                
+                if (pTop1 && pTop2 && pBot1 && pBot2) {
+                    const dash = vis.type === 'directLines' ? '4,4' : 'none';
+                    const color = vis.type === 'directLines' ? '#d97706' : '#e11d48'; 
+                    
+                    const l1 = createSVGElement('line', {
+                        x1: pTop1.x + 12, y1: pTop1.y, x2: pTop2.x - 12, y2: pTop2.y,
+                        stroke: color, 'stroke-width': '2', 'stroke-dasharray': dash
+                    });
+                    const l2 = createSVGElement('line', {
+                        x1: pBot1.x + 12, y1: pBot1.y, x2: pBot2.x - 12, y2: pBot2.y,
+                        stroke: color, 'stroke-width': '2', 'stroke-dasharray': dash
+                    });
+                    svg.appendChild(l1);
+                    svg.appendChild(l2);
+                }
+            }
+        });
+    }
+
+    // --- UI CONTROLLERS ---
+
+    const presetSelect = document.getElementById('preset-select');
+    const trebleInput = document.getElementById('treble-input');
+    const bassInput = document.getElementById('bass-input');
+    const cpVoiceSelect = document.getElementById('cp-voice');
+    const errorContainer = document.getElementById('error-container');
+    const successBox = document.getElementById('success-box');
+
+    function run() {
+        if (typeof ABCJS === 'undefined') return;
+
+        const analysis = analyzeAndGenerate(trebleInput.value, bassInput.value, cpVoiceSelect.value);
+
+        ABCJS.renderAbc("paper", analysis.abcString, {
+            responsive: "resize",
+            add_classes: true,
+            staffwidth: 750
+        });
+
+        // Delay overlay drawing extremely slightly to guarantee browser layout calculation is complete
+        setTimeout(() => drawOverlays(analysis.visuals), 10);
+
+        if (analysis.txtErrors.length > 0) {
+            errorContainer.style.display = 'block';
+            successBox.style.display = 'none';
+            errorContainer.innerHTML = analysis.txtErrors.map(e => `<div class="error-item">${e}</div>`).join('');
+        } else {
+            errorContainer.style.display = 'none';
+            successBox.style.display = 'block';
+        }
+    }
+
+    trebleInput.addEventListener('input', run);
+    bassInput.addEventListener('input', run);
+    cpVoiceSelect.addEventListener('change', run);
+    
+    presetSelect.addEventListener('change', (e) => {
+        const p = presets[e.target.value];
+        if (p) {
+            trebleInput.value = p.treble;
+            bassInput.value = p.bass;
+            cpVoiceSelect.value = p.cp;
+            run();
+        }
+    });
+
+    window.addEventListener('load', () => setTimeout(run, 100));
+
+</script>
+</body>
+</html>

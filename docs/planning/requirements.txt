@@ -1,0 +1,109 @@
+This is an incredibly solid foundation. You have clearly defined the domain logic, the front-end expectations, and the specific pedagogical frameworks (Fuxian species and Common Practice SATB) the engine needs to support.
+
+Based on your provided HTML prototype, the exhaustive contrapuntal treatise, and the cross-platform architecture we discussed, here is a detailed, logical Software Requirements Specification (SRS) to guide the development of your Voice Leading & Counterpoint Analyzer.
+
+---
+
+### 1. Core Algorithm (Native Rust Engine)
+
+The core engine must be completely decoupled from any UI or file format, operating on a standardized internal data structure (e.g., a grid of `Note` events linked to `Voice` tracks).
+
+#### 1.1 Data Ingestion & Automatic Voice Separation
+
+When raw MIDI data is provided instead of strictly structured MusicXML, the engine must automatically parse and separate the notes into distinct contrapuntal voices (up to 4).
+
+* **Quantization & Alignment:** Snap raw MIDI ticks to musical grid values (quarter notes, eighth notes) based on the provided time signature and tempo map, calculating the exact duration of each event.
+* **Pitch-Clustering (Statistical Separation):** Use K-means clustering or running pitch-range averages to sort simultaneous or overlapping notes into distinct voice buckets (Soprano, Alto, Tenor, Bass).
+* **Polyphonic De-interleaving:** When voices cross or share a staff, analyze the horizontal melodic trajectory (step inertia) to keep lines contiguous rather than just strictly assigning the highest note to the Soprano.
+
+#### 1.2 Rule Engine & Configuration Matrix
+
+The engine must use a modular trait-based system where individual "Rules" can be toggled on/off to create Presets.
+
+* **Fuxian Species Presets (2-Voice):**
+* *First Species (1:1):* Enforce only perfect/imperfect consonances. Flag any parallel 5ths/8ves, direct perfects, or melodic leaps larger than an octave/dissonant leaps.
+* *Second Species (2:1):* Allow weak-beat dissonances *only* if approached and left by step (passing tones).
+* *Third Species (4:1):* Enable rules for dissonant neighbor tones, double neighbors, and the *nota cambiata* idiom.
+* *Fourth Species (Syncopation):* Detect tied notes across barlines. Enforce the preparation -> suspension -> downward step resolution syntax (e.g., 7-6, 4-3).
+* *Fifth Species (Florid):* Allow mixed rhythms and eighth-note weak-beat subdivisions.
+
+
+* **General Voice Leading (Common Practice SATB 18th Century):**
+* *Spacing Rules:* Flag adjacent upper voices > octave, or Tenor/Bass > 12th.
+* *Tendency Tones:* Flag unresolved leading tones () or chordal sevenths that do not resolve downward by step.
+* *Doubling Rules:* Flag doubled leading tones, or incorrect doubling in 6/4 chords.
+
+
+
+#### 1.3 Error Localization & Reporting
+
+The engine must not just return a boolean "pass/fail". It must return structured error objects containing:
+
+* **Rule Violated:** (e.g., "Parallel 5ths", "Unresolved Leading Tone").
+* **Location:** The exact measure, beat, and tick.
+* **Involved Entities:** The specific `voice_index` and `note_ids` that caused the infraction (e.g., the exact Soprano and Bass notes creating the parallel 5th).
+
+#### 1.4 Harmonic & Melodic Analysis (Points of Interest)
+
+* **Vertical Sonority:** Calculate the chord quality, root, and inversion (e.g., 6/3, 6/4) for every vertical slice.
+* **Roman Numeral Analysis:** If a key signature is provided, output the functional Roman numerals.
+* **Non-Chord Tone Tagging:** Label detected passing tones, neighbor tones, and suspensions based on their melodic approach/departure.
+
+---
+
+### 2. Web-Based UI (Browser & Wasm)
+
+This serves as the primary educational and practice interface, utilizing the prototype you provided but backed by the compiled Rust Wasm engine.
+
+#### 2.1 File I/O
+
+* **MusicXML Parser:** Read standard MusicXML files and translate them into the engine's internal data structure.
+* **MusicXML Export:** Allow the user to download their corrected counterpoint back as a MusicXML file to open in MuseScore/Sibelius.
+
+#### 2.2 Interactive Editor & Visualization (ABCJS)
+
+* **Two-Way Binding:** The text-based ABC input and the visual staff must be locked together.
+* **Direct Interaction:** Implement drag-and-drop on the ABCJS SVG noteheads to alter pitches, which immediately updates the text input and triggers a re-analysis.
+
+#### 2.3 Educational Presets & Cantus Firmus Library
+
+* **Dropdown Library:** Built-in repository of Fux's *Gradus ad Parnassum* Cantus Firmi across all modes (Dorian, Phrygian, Lydian, Mixolydian, Aeolian, Ionian).
+* **Voice Toggling:** Allow the user to place the Cantus Firmus in the Bass, Tenor, Alto, or Soprano, and assign the active input to the Counterpoint line.
+
+#### 2.4 Diagnostic Overlays (The SVG Layer)
+
+* **Geometric Injections:** Based on your prototype, map the engine's exact error coordinates to the ABCJS screen space.
+* **Visual Vocabulary:**
+* *Red Lines (Dashed):* Connect notes causing parallel/direct 5ths and 8ves.
+* *Dotted Red Circles:* Highlight incorrect dissonant leaps or unresolved tendency tones.
+* *Blue Text Overlays:* Render Roman numerals and inversion figures (e.g., ) beneath the staff.
+
+
+
+---
+
+### 3. Reaper ReaImGui Integration
+
+This brings the analysis directly into the DAW environment for composers working in piano rolls rather than sheet music.
+
+#### 3.1 Seamless Data Bridging
+
+* **ReaScript Hook:** A Lua script that pulls the active MIDI take (`reaper.MIDI_GetAllEvts`), passes it to the compiled Rust shared library (`.dll`/`.so`/`.dylib`), and receives the structured JSON error report back.
+
+#### 3.2 ImGui Error Dashboard
+
+* **List View:** A clean, dockable panel listing all detected errors and points of interest chronologically.
+* **Interactive Navigation:** Clicking an error in the ReaImGui list automatically moves Reaper's edit cursor to that exact beat/tick in the timeline, allowing for immediate correction.
+
+#### 3.3 Custom Staff Rendering inside ReaImGui
+
+Since we cannot inject ABCJS into Reaper's native UI safely without bulky webviews:
+
+* **Custom Draw List:** Use `reaper.ImGui_DrawList` functions to render a bespoke, simplified 5-line musical staff directly inside the ImGui window.
+* **Real-time Overlay:** Draw whole/half note circles mapping to the current MIDI data, and draw the same geometric error identifiers (red lines for parallels, circles for dissonances) used in the web version directly over this custom ImGui staff.
+
+---
+
+This provides a clear roadmap. The most complex logic here will be **Section 1.1** (automatically separating a raw, messy MIDI file into 4 distinct, continuous voices).
+
+Would you like me to outline the specific mathematical/statistical logic you could use in Rust to achieve that polyphonic voice separation, or would you prefer to start mapping out the Rust struct definitions for the Rule Engine?
