@@ -1,0 +1,3 @@
+[submodule "docs/demos/AiHarmony"]
+	path = docs/demos/AiHarmony
+	url = https://github.com/rualark/AiHarmony

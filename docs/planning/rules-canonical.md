@@ -131,7 +131,7 @@ Each rule entry must be treated as an atomic check:
 ### Species 2 (2:1)
 22. `sp2.rhythm.two_to_one_only`
 - Severity: `error`
-- Condition: two CP notes per cantus note.
+- Condition: two CP notes per cantus note in non-terminal CF windows; terminal cadence window may compress to fewer CP note onsets.
 
 23. `sp2.strong_beat.consonance_required`
 - Severity: `error`
@@ -148,7 +148,7 @@ Each rule entry must be treated as an atomic check:
 ### Species 3 (4:1)
 26. `sp3.rhythm.four_to_one_only`
 - Severity: `error`
-- Condition: four CP notes per cantus note.
+- Condition: four CP notes per cantus note in non-terminal CF windows; terminal cadence window may compress to fewer CP note onsets.
 
 27. `sp3.strong_beat.consonance_required`
 - Severity: `error`
@@ -158,11 +158,7 @@ Each rule entry must be treated as an atomic check:
 - Severity: `error`
 - Condition: dissonances must fit passing/neighbor-like stepwise patterns.
 
-29. `sp3.dissonance.double_neighbor_allowed_pattern`
-- Severity: `warning`
-- Condition: double-neighbor allowed only as canonical figure.
-
-30. `sp3.dissonance.cambiata_limited_exception`
+29. `sp3.dissonance.cambiata_limited_exception`
 - Severity: `warning`
 - Condition: cambiata permits specific leap-from-dissonance exception only in defined schema.
 
@@ -250,6 +246,36 @@ These rules are explicitly tracked from `docs/research/*` so they are not missed
 - Scope: all species
 - Condition: repeated large leaps in same direction restricted unless triadic compensation pattern.
 
+44b. `gen.melody.repeated_pitch_species_profiled`
+- Severity: `error` in species 1 and species 4 (when not tie-linked), `warning` in species 2/3/5
+- Scope: species presets
+- Condition: consecutive repeated melodic pitch is forbidden in species 1; discouraged in species 2/3/5; in species 4 repeated pitch must be tie-linked (preparation/suspension) to be valid.
+
+44c. `gen.opening.interval_by_position_species_profiled`
+- Severity: `error`
+- Scope: species presets
+- Condition: opening pitch class follows species position logic (CP above starts on tonic/dominant; CP below starts on tonic).
+
+44d. `gen.cadence.clausula_vera_required`
+- Severity: `error`
+- Scope: species presets
+- Condition: cadence follows clausula-vera profile (tonic final, contrary stepwise approach, penultimate formula where applicable).
+
+44e. `gen.spacing.two_voice_max_distance`
+- Severity: `warning` above 10th, `error` above 12th
+- Scope: two-voice textures
+- Condition: vertical spacing between the two voices should stay within a tenth by default and must not exceed a twelfth.
+
+44f. `gen.melody.climax_non_coincident_between_voices`
+- Severity: `warning`
+- Scope: multi-voice species presets
+- Condition: primary climaxes in distinct voices should not coincide at the same metric instant.
+
+44a. `gen.motion.consecutive_parallel_imperfects_limited`
+- Severity: `error`
+- Scope: all profiles (species and general voice-leading)
+- Condition: no more than 3 consecutive parallel generic 3rds or 6ths between the same voice pair across successive interval events.
+
 45. `gen.voice.leading_tone_not_doubled`
 - Severity: `error`
 - Scope: tonal/common-practice profile
@@ -316,23 +342,58 @@ These rules are explicitly tracked from `docs/research/*` so they are not missed
 - Scope: species 4
 - Condition: permitted suspension classes restricted (e.g., 7-6, 4-3, 9-8 above; 2-3 below).
 
-58. `sp4.afterbeat_parallel_guard`
+58. `sp4.form.strict_entry_exit_profile`
+- Severity: `error`
+- Scope: species 4
+- Condition: strict species-4 framing: half-rest opening profile and constrained cadential ending profile.
+
+59. `sp4.form.break_species_budget`
+- Severity: `warning`
+- Scope: species 4
+- Condition: break-species passages should be short and limited in count/segments.
+
+60. `sp4.suspension_density_minimum`
+- Severity: `warning`
+- Scope: species 4
+- Condition: dissonant suspensions should appear with minimum density in the exercise.
+
+61. `sp4.afterbeat_parallel_guard`
 - Severity: `error`
 - Scope: species 4
 - Condition: suspension chains must not generate forbidden after-beat parallels.
 
-59. `sp4.all_voices_syncopation_avoidance`
+62. `sp4.all_voices_syncopation_avoidance`
 - Severity: `warning`
 - Scope: multi-voice species 4/5 textures
 - Condition: avoid fully syncopated texture with no beat-articulating voice.
 
-60. `sp5.eighth_grouping_no_triplet_like_clusters`
+63. `sp2.structure.downbeat_interval_repetition_limits`
+- Severity: `error`/`warning`
+- Scope: species 2
+- Condition: repeated same perfect interval on consecutive downbeats is forbidden; long runs of same imperfect class are discouraged.
+
+64. `sp2.weak_beat.consonant_pattern_catalog`
+- Severity: `warning`
+- Scope: species 2
+- Condition: consonant weak beats should match recognized pattern classes (passing, neighbor, substitution, skipped passing, interval subdivision, change of register, delay).
+
+65. `sp3.structure.downbeat_interval_repetition_limits`
+- Severity: `error`/`warning`
+- Scope: species 3
+- Condition: at most two consecutive downbeats in one perfect interval; long runs of same imperfect class are discouraged.
+
+66. `sp3.perfect_interval_proximity_guard`
+- Severity: `error`
+- Scope: species 3
+- Condition: structural perfect intervals on downbeats must not be too closely preceded by the same perfect class in the prior bar.
+
+67. `sp5.eighth_grouping_no_triplet_like_clusters`
 - Severity: `warning`
 - Scope: species 5 strict profile
 - Condition: eighth-note groups restricted to supported pairwise decorative shapes.
 
 ### Advanced Counterpoint (Tracked, Deferred by Default)
-61. `adv.invertible.octave_treat_fifth_as_sensitive`
+68. `adv.invertible.octave_treat_fifth_as_sensitive`
 - Severity: `deferred`
 - Scope: invertible counterpoint contexts
 - Condition: fifth behavior constrained under octave inversion to avoid illicit fourth-against-bass outcomes.

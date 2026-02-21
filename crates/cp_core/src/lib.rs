@@ -100,6 +100,18 @@ pub struct AnalysisConfig {
     pub severity_overrides: std::collections::BTreeMap<RuleId, Severity>,
     #[serde(default)]
     pub rule_params: std::collections::BTreeMap<RuleId, serde_json::Value>,
+    #[serde(default)]
+    pub harmonic_rhythm: HarmonicRhythm,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum HarmonicRhythm {
+    #[default]
+    NoteOnset,
+    FixedPerBar { chords_per_bar: u8 },
+    FixedBarsPerChord { bars_per_chord: u8 },
+    PerMeasure { chords_per_bar: Vec<u8> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +151,12 @@ pub struct HarmonicSlice {
     pub inversion: Option<String>,
     pub roman_numeral: Option<String>,
     pub confidence: f32,
+    #[serde(default)]
+    pub inferred_root: Option<bool>,
+    #[serde(default)]
+    pub missing_tones: Vec<String>,
+    #[serde(default)]
+    pub chord_form: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,7 +205,10 @@ pub fn validate_score(score: &NormalizedScore) -> Result<(), CoreError> {
     }
     let ts = &score.meta.time_signature;
     if ts.numerator == 0 || ts.denominator == 0 {
-        return Err(CoreError::InvalidTimeSignature(ts.numerator, ts.denominator));
+        return Err(CoreError::InvalidTimeSignature(
+            ts.numerator,
+            ts.denominator,
+        ));
     }
     for voice in &score.voices {
         for note in &voice.notes {

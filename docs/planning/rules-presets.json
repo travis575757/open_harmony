@@ -21,6 +21,8 @@
       "gen.harmony.supported_sonorities",
       "gen.motion.parallel_perfects_forbidden",
       "gen.motion.direct_perfects_restricted",
+      "gen.motion.consecutive_parallel_imperfects_limited",
+      "gen.spacing.two_voice_max_distance",
       "gen.spacing.upper_adjacent_max_octave",
       "gen.spacing.tenor_bass_max_twelfth",
       "gen.voice_crossing_and_overlap.restricted",
@@ -28,11 +30,15 @@
       "gen.melody.max_leap_octave",
       "gen.melody.dissonant_leaps_forbidden",
       "gen.melody.post_leap_compensation_required",
+      "gen.opening.interval_by_position_species_profiled",
+      "gen.cadence.clausula_vera_required",
       "gen.cadence.final_perfect_consonance_required",
       "gen.interval.p4_dissonant_against_bass_in_two_voice",
       "gen.motion.contrary_and_oblique_preferred",
       "gen.melody.single_climax_preferred",
-      "gen.melody.consecutive_large_leaps_restricted"
+      "gen.melody.climax_non_coincident_between_voices",
+      "gen.melody.consecutive_large_leaps_restricted",
+      "gen.melody.repeated_pitch_species_profiled"
     ],
     "tonal_general_rules": [
       "gen.voice.leading_tone_not_doubled",
@@ -63,22 +69,28 @@
       "sp2.strong_beat.consonance_required",
       "sp2.dissonance.weak_passing_stepwise",
       "sp2.structure.downbeat_skeleton_no_parallel_perfects",
+      "sp2.structure.downbeat_interval_repetition_limits",
+      "sp2.weak_beat.consonant_pattern_catalog",
       "sp2.downbeat_unison_discouraged"
     ],
     "species3_rules": [
       "sp3.rhythm.four_to_one_only",
       "sp3.strong_beat.consonance_required",
       "sp3.dissonance.passing_neighbor_patterns_only",
-      "sp3.dissonance.double_neighbor_allowed_pattern",
+      "sp3.structure.downbeat_interval_repetition_limits",
+      "sp3.perfect_interval_proximity_guard",
       "sp3.dissonance.cambiata_limited_exception",
       "sp3.downbeat_unison_forbidden"
     ],
     "species4_rules": [
       "sp4.rhythm.syncopated_ligature_profile",
+      "sp4.form.strict_entry_exit_profile",
       "sp4.suspension.preparation_required",
       "sp4.suspension.downbeat_dissonance_allowed_only_if_suspension",
       "sp4.suspension.step_resolution_required",
       "sp4.break_species.allowed_when_no_ligature_possible",
+      "sp4.form.break_species_budget",
+      "sp4.suspension_density_minimum",
       "sp4.allowed_suspension_classes_enforced",
       "sp4.afterbeat_parallel_guard",
       "sp4.all_voices_syncopation_avoidance"

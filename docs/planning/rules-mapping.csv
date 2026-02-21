@@ -8,6 +8,7 @@ gen.input_min_note_length.eighth_or_longer,docs/demos/AiHarmony/md/cp_analyse.md
 gen.harmony.supported_sonorities,docs/demos/AiHarmony/md/cp_analyse.md,md,line:20,primary,Triads and 7th chords
 gen.motion.parallel_perfects_forbidden,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:42,primary,Consecutive 5ths or 8ves
 gen.motion.direct_perfects_restricted,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:44|45,primary,Similar motion to 5th/8ve
+gen.motion.consecutive_parallel_imperfects_limited,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:32 para:40,primary,No more than 3 consecutive parallel generic 3rds/6ths
 gen.spacing.upper_adjacent_max_octave,docs/research/cp_gpt.md,md,lines:304|312,secondary,SATB spacing guidance
 gen.spacing.tenor_bass_max_twelfth,docs/research/cp_gpt.md,md,lines:304|312,secondary,SATB spacing guidance
 gen.voice_crossing_and_overlap.restricted,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:50|51,primary,Voice crossing and arrangement
@@ -15,6 +16,11 @@ gen.unison.interior_restricted,docs/demos/AiHarmony/js/data/rules_paragraphs.js,
 gen.melody.max_leap_octave,docs/demos/cp_demo.html,html,lines:246-250,secondary,Prototype first-species check
 gen.melody.dissonant_leaps_forbidden,docs/demos/cp_demo.html,html,lines:250-253,secondary,Prototype first-species check
 gen.melody.post_leap_compensation_required,docs/research/cp_gpt.md,md,line:48,secondary,Leap compensation description
+gen.melody.repeated_pitch_species_profiled,docs/research/cp_gpt.md,md,line:20,secondary,Avoid repeated motives and preserve line independence
+gen.opening.interval_by_position_species_profiled,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:18,primary,Opening profile by voice position
+gen.cadence.clausula_vera_required,docs/research/cp_gemini.md,md,line:90,secondary,Clausula vera ending formula
+gen.spacing.two_voice_max_distance,docs/research/cp_gpt.md,md,lines:304|312,secondary,Two-voice distance guidance
+gen.melody.climax_non_coincident_between_voices,docs/research/cp_gpt.md,md,line:67,secondary,Avoid coincident climaxes
 gen.cadence.final_perfect_consonance_required,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:19,primary,Last measure constraints
 sp1.rhythm.one_to_one_only,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:17,primary,Rhythmic limitations by species
 sp1.vertical.consonance_only,docs/research/cp_gpt.md,md,lines:35|42|75,secondary,Species 1 strict consonance
@@ -24,16 +30,22 @@ sp2.rhythm.two_to_one_only,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,p
 sp2.strong_beat.consonance_required,docs/research/cp_gpt.md,md,line:98,secondary,Downbeat consonance
 sp2.dissonance.weak_passing_stepwise,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:66,primary,Passing and neighbor tones
 sp2.structure.downbeat_skeleton_no_parallel_perfects,docs/research/cp_gpt.md,md,line:102,secondary,Downbeat skeleton
+sp2.structure.downbeat_interval_repetition_limits,docs/research/cp_gemini.md,md,line:111,secondary,Downbeat repetition limits in species 2
+sp2.weak_beat.consonant_pattern_catalog,docs/research/cp_gemini.md,md,line:120,secondary,Consonant weak-beat pattern catalog
 sp3.rhythm.four_to_one_only,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:17,primary,Rhythmic limitations by species
 sp3.strong_beat.consonance_required,docs/research/cp_gpt.md,md,lines:143|149,secondary,Species 3 accent hierarchy
 sp3.dissonance.passing_neighbor_patterns_only,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:66,primary,Pattern-licensed dissonance
-sp3.dissonance.double_neighbor_allowed_pattern,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:68,primary,Double neighbor paragraph
+sp3.structure.downbeat_interval_repetition_limits,docs/research/cp_gemini.md,md,line:132,secondary,Species 3 downbeat repetition guidance
+sp3.perfect_interval_proximity_guard,docs/research/cp_gemini.md,md,line:136,secondary,Perfect-interval proximity constraints
 sp3.dissonance.cambiata_limited_exception,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:69,primary,Cambiata paragraph
 sp4.rhythm.syncopated_ligature_profile,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:17,primary,Rhythmic limitations by species
+sp4.form.strict_entry_exit_profile,docs/research/cp_gemini.md,md,line:155,secondary,Species 4 strict opening/ending profile
 sp4.suspension.preparation_required,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:63,primary,Suspension preparation
 sp4.suspension.downbeat_dissonance_allowed_only_if_suspension,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:61|62,primary,Suspensions
 sp4.suspension.step_resolution_required,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:64|65,primary,Suspension resolution
 sp4.break_species.allowed_when_no_ligature_possible,docs/research/cp_gpt.md,md,line:197,secondary,Break-species allowance
+sp4.form.break_species_budget,docs/research/cp_gemini.md,md,line:152,secondary,Break-species should be rare and short
+sp4.suspension_density_minimum,docs/research/cp_gemini.md,md,line:147,secondary,Prefer frequent dissonant suspensions
 sp5.rhythm.mixed_species_profile,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:13|20,primary,Mixed species paragraphs
 sp5.strong_beat.consonance_or_prepared_suspension_only,docs/research/cp_gpt.md,md,line:237,secondary,Structural beat logic
 sp5.eighth_notes.weak_position_pairs_only,docs/research/cp_gpt.md,md,line:239,secondary,Strict florid rhythm guidance

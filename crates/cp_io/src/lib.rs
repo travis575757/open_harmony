@@ -19,8 +19,9 @@ pub fn to_response_json(resp: &AnalysisResponse) -> Result<String, IoError> {
 mod tests {
     use super::*;
     use cp_core::{
-        AnalysisConfig, AnalysisRequest, AnalysisResponse, AnalysisSummary, HarmonicSlice, KeySignature,
-        NctTag, NormalizedScore, PresetId, ScaleMode, ScoreMeta, TimeSignature, Voice,
+        AnalysisConfig, AnalysisRequest, AnalysisResponse, AnalysisSummary, HarmonicRhythm,
+        HarmonicSlice, KeySignature, NctTag, NormalizedScore, PresetId, ScaleMode, ScoreMeta,
+        TimeSignature, Voice,
     };
     use std::collections::BTreeMap;
 
@@ -52,11 +53,36 @@ mod tests {
                 disabled_rule_ids: vec![],
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
+                harmonic_rhythm: HarmonicRhythm::NoteOnset,
             },
         };
         let st = serde_json::to_string(&req).expect("serialize");
         let reparsed = parse_request_json(&st).expect("parse");
         assert_eq!(reparsed.score.meta.exercise_count, 1);
+    }
+
+    #[test]
+    fn missing_harmonic_rhythm_defaults_to_note_onset() {
+        let raw = r#"{
+          "score": {
+            "meta": {
+              "exercise_count": 1,
+              "key_signature": {"tonic_pc": 0, "mode": "major"},
+              "time_signature": {"numerator": 4, "denominator": 4},
+              "ticks_per_quarter": 480
+            },
+            "voices": [{"voice_index": 0, "name": "v0", "notes": []}]
+          },
+          "config": {
+            "preset_id": "species1",
+            "enabled_rule_ids": [],
+            "disabled_rule_ids": [],
+            "severity_overrides": {},
+            "rule_params": {}
+          }
+        }"#;
+        let reparsed = parse_request_json(raw).expect("parse legacy request");
+        assert_eq!(reparsed.config.harmonic_rhythm, HarmonicRhythm::NoteOnset);
     }
 
     #[test]
@@ -73,6 +99,9 @@ mod tests {
                 inversion: Some("root".to_string()),
                 roman_numeral: Some("I".to_string()),
                 confidence: 0.9,
+                inferred_root: Some(false),
+                missing_tones: vec![],
+                chord_form: Some("complete_triad".to_string()),
             }],
             nct_tags: vec![NctTag {
                 note_id: "n1".to_string(),

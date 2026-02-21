@@ -1,7 +1,8 @@
 use cp_core::{
     interval_pc, is_consonant, is_perfect, note_location, ticks_per_measure, AnalysisDiagnostic,
-    NoteEvent, NormalizedScore, PresetId, RuleId, Severity,
+    NormalizedScore, NoteEvent, PresetId, RuleId, Severity,
 };
+use cp_harmony::identify_chord;
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -144,7 +145,10 @@ fn parse_rule_params<T: DeserializeOwned>(
     })
 }
 
-fn rule_params_or_default<T: DeserializeOwned + Default>(ctx: &RuleContext<'_>, rule_id: &str) -> T {
+fn rule_params_or_default<T: DeserializeOwned + Default>(
+    ctx: &RuleContext<'_>,
+    rule_id: &str,
+) -> T {
     ctx.rule_params
         .get(rule_id)
         .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -379,7 +383,58 @@ fn pair_notes(score: &NormalizedScore) -> Option<(&[NoteEvent], &[NoteEvent])> {
     if score.voices.len() < 2 {
         return None;
     }
-    Some((&score.voices[0].notes, &score.voices[1].notes))
+    let a = score.voices[0].notes.as_slice();
+    let b = score.voices[1].notes.as_slice();
+    // Species checks that need CP/CF roles assume CP has denser rhythm than CF.
+    // If both are equal density, preserve declared voice order.
+    if b.len() > a.len() {
+        Some((b, a))
+    } else {
+        Some((a, b))
+    }
+}
+
+fn cp_starts_per_cf_window(cp: &[NoteEvent], cf: &[NoteEvent]) -> Option<Vec<usize>> {
+    if cf.is_empty() {
+        return None;
+    }
+    let mut counts = vec![0usize; cf.len()];
+    for n in cp {
+        let mut placed = false;
+        for (i, c) in cf.iter().enumerate() {
+            let start = c.start_tick;
+            let end = start + c.duration_ticks;
+            if n.start_tick >= start && n.start_tick < end {
+                counts[i] += 1;
+                placed = true;
+                break;
+            }
+        }
+        if !placed {
+            return None;
+        }
+    }
+    Some(counts)
+}
+
+fn species_ratio_with_terminal_cadence_ok(
+    cp: &[NoteEvent],
+    cf: &[NoteEvent],
+    expected_per_cf: usize,
+) -> bool {
+    let Some(counts) = cp_starts_per_cf_window(cp, cf) else {
+        return false;
+    };
+    if counts.is_empty() {
+        return true;
+    }
+    for c in counts.iter().take(counts.len().saturating_sub(1)) {
+        if *c != expected_per_cf {
+            return false;
+        }
+    }
+    let last = counts[counts.len() - 1];
+    (1..=expected_per_cf).contains(&last)
 }
 
 fn active_note_at(voice: &[NoteEvent], tick: u32) -> Option<&NoteEvent> {
@@ -400,8 +455,27 @@ fn all_start_ticks(score: &NormalizedScore) -> Vec<u32> {
 }
 
 fn sample_two_voice(score: &NormalizedScore) -> Vec<(u32, &NoteEvent, &NoteEvent)> {
+    sample_voice_pair(score, 0, 1)
+}
+
+fn sample_voice_pair(
+    score: &NormalizedScore,
+    upper_voice_index: usize,
+    lower_voice_index: usize,
+) -> Vec<(u32, &NoteEvent, &NoteEvent)> {
     let mut out = Vec::new();
-    let Some((a, b)) = pair_notes(score) else {
+    let Some(a) = score
+        .voices
+        .get(upper_voice_index)
+        .map(|v| v.notes.as_slice())
+    else {
+        return out;
+    };
+    let Some(b) = score
+        .voices
+        .get(lower_voice_index)
+        .map(|v| v.notes.as_slice())
+    else {
         return out;
     };
     for tick in all_start_ticks(score) {
@@ -430,40 +504,6 @@ fn species_number(preset: &PresetId) -> Option<u8> {
         PresetId::Species4 => Some(4),
         PresetId::Species5 => Some(5),
         _ => None,
-    }
-}
-
-fn detect_quality_root(pcs: &[u8]) -> (Option<u8>, Option<&'static str>) {
-    if pcs.is_empty() {
-        return (None, None);
-    }
-    for &root in pcs {
-        let mut ints: Vec<u8> = pcs.iter().map(|pc| interval_pc(*pc as i16, root as i16)).collect();
-        ints.sort_unstable();
-        if ints.contains(&4) && ints.contains(&7) && ints.contains(&10) {
-            return (Some(root), Some("dominant7"));
-        }
-        if ints.contains(&4) && ints.contains(&7) {
-            return (Some(root), Some("major"));
-        }
-        if ints.contains(&3) && ints.contains(&7) {
-            return (Some(root), Some("minor"));
-        }
-        if ints.contains(&3) && ints.contains(&6) {
-            return (Some(root), Some("diminished"));
-        }
-    }
-    (Some(pcs[0]), Some("other"))
-}
-
-fn inversion_from_bass(root: u8, bass_pc: u8) -> &'static str {
-    let i = interval_pc(bass_pc as i16, root as i16);
-    match i {
-        0 => "root",
-        3 | 4 => "first",
-        6 | 7 | 8 => "second",
-        10 | 11 => "third",
-        _ => "other",
     }
 }
 
@@ -518,22 +558,17 @@ fn r_gen_input_key_sig(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
 
 fn r_gen_input_timesig(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     let ts = &ctx.score.meta.time_signature;
-    let allowed = [
-        (2, 4),
-        (3, 4),
-        (4, 4),
-        (2, 2),
-        (5, 4),
-        (6, 4),
-        (3, 2),
-    ];
+    let allowed = [(2, 4), (3, 4), (4, 4), (2, 2), (5, 4), (6, 4), (3, 2)];
     let mut out = Vec::new();
     if !allowed.contains(&(ts.numerator, ts.denominator)) {
         if let Some(note) = ctx.score.voices.iter().flat_map(|v| v.notes.iter()).next() {
             out.push(diag(
                 "gen.input.timesig_supported",
                 Severity::Error,
-                format!("unsupported time signature {}/{}", ts.numerator, ts.denominator),
+                format!(
+                    "unsupported time signature {}/{}",
+                    ts.numerator, ts.denominator
+                ),
                 ctx.score,
                 note,
                 None,
@@ -656,28 +691,35 @@ fn r_parallel_perfects(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     let mut out = Vec::new();
     for i in 0..ctx.score.voices.len() {
         for j in (i + 1)..ctx.score.voices.len() {
-            let va = &ctx.score.voices[i].notes;
-            let vb = &ctx.score.voices[j].notes;
-            let min_len = va.len().min(vb.len());
-            if min_len < 2 {
+            let samples: Vec<(u32, &NoteEvent, &NoteEvent)> = sample_voice_pair(ctx.score, i, j)
+                .into_iter()
+                .filter(|(tick, a, b)| a.start_tick == *tick && b.start_tick == *tick)
+                .collect();
+            if samples.len() < 2 {
                 continue;
             }
-            for k in 1..min_len {
-                let prev = interval_pc(va[k - 1].midi, vb[k - 1].midi);
-                let now = interval_pc(va[k].midi, vb[k].midi);
+            for w in samples.windows(2) {
+                let (_prev_tick, prev_a, prev_b) = w[0];
+                let (_tick, now_a, now_b) = w[1];
+                let prev = interval_pc(prev_a.midi, prev_b.midi);
+                let now = interval_pc(now_a.midi, now_b.midi);
+                let da = now_a.midi - prev_a.midi;
+                let db = now_b.midi - prev_b.midi;
+                let similar = (da > 0 && db > 0) || (da < 0 && db < 0);
                 if is_perfect(prev)
                     && is_perfect(now)
                     && prev == now
-                    && va[k].midi != va[k - 1].midi
-                    && vb[k].midi != vb[k - 1].midi
+                    && da != 0
+                    && db != 0
+                    && similar
                 {
                     out.push(diag(
                         "gen.motion.parallel_perfects_forbidden",
                         Severity::Error,
                         "parallel perfect interval detected",
                         ctx.score,
-                        &va[k],
-                        Some(&vb[k]),
+                        now_a,
+                        Some(now_b),
                     ));
                 }
             }
@@ -687,27 +729,109 @@ fn r_parallel_perfects(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
 }
 
 fn r_direct_perfects(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
-    let Some((upper, lower)) = pair_notes(ctx.score) else {
+    let samples = sample_two_voice(ctx.score);
+    if samples.len() < 2 {
         return Vec::new();
-    };
+    }
     let mut out = Vec::new();
-    for k in 1..upper.len().min(lower.len()) {
-        let now = interval_pc(upper[k].midi, lower[k].midi);
+    for w in samples.windows(2) {
+        let (_prev_tick, prev_upper, prev_lower) = w[0];
+        let (_tick, upper, lower) = w[1];
+        let now = interval_pc(upper.midi, lower.midi);
         if !is_perfect(now) {
             continue;
         }
-        let du = upper[k].midi - upper[k - 1].midi;
-        let dl = lower[k].midi - lower[k - 1].midi;
+        let du = upper.midi - prev_upper.midi;
+        let dl = lower.midi - prev_lower.midi;
         let similar = (du > 0 && dl > 0) || (du < 0 && dl < 0);
-        if similar && du.abs() > 2 {
+        if similar && du != 0 && dl != 0 && du.abs() > 2 {
             out.push(diag(
                 "gen.motion.direct_perfects_restricted",
                 Severity::Warning,
                 "direct perfect interval approach in similar motion",
                 ctx.score,
-                &upper[k],
-                Some(&lower[k]),
+                upper,
+                Some(lower),
             ));
+        }
+    }
+    out
+}
+
+fn imperfect_generic_class(pc: u8) -> Option<u8> {
+    match pc {
+        3 | 4 => Some(3),
+        8 | 9 => Some(6),
+        _ => None,
+    }
+}
+
+fn r_consecutive_parallel_imperfects(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    const MAX_CONSECUTIVE: usize = 3;
+
+    let mut out = Vec::new();
+    for i in 0..ctx.score.voices.len() {
+        for j in (i + 1)..ctx.score.voices.len() {
+            let samples = sample_voice_pair(ctx.score, i, j);
+            if samples.len() < 2 {
+                continue;
+            }
+
+            let mut run_class: Option<u8> = None;
+            let mut run_len: usize = 0;
+            let mut run_flagged = false;
+
+            for w in samples.windows(2) {
+                let (_prev_tick, prev_a, prev_b) = w[0];
+                let (_tick, now_a, now_b) = w[1];
+
+                let prev_class = imperfect_generic_class(interval_pc(prev_a.midi, prev_b.midi));
+                let now_class = imperfect_generic_class(interval_pc(now_a.midi, now_b.midi));
+
+                let da = now_a.midi - prev_a.midi;
+                let db = now_b.midi - prev_b.midi;
+                let similar = (da > 0 && db > 0) || (da < 0 && db < 0);
+
+                let continues_parallel_run = similar
+                    && da != 0
+                    && db != 0
+                    && prev_class.is_some()
+                    && prev_class == now_class;
+
+                if !continues_parallel_run {
+                    run_class = None;
+                    run_len = 0;
+                    run_flagged = false;
+                    continue;
+                }
+
+                let cls = now_class.unwrap_or(0);
+                if run_class == Some(cls) {
+                    run_len += 1;
+                } else {
+                    run_class = Some(cls);
+                    run_len = 2; // previous + current sonority
+                    run_flagged = false;
+                }
+
+                if run_len > MAX_CONSECUTIVE && !run_flagged {
+                    let mut d = diag(
+                        "gen.motion.consecutive_parallel_imperfects_limited",
+                        Severity::Error,
+                        "more than 3 consecutive parallel thirds/sixths",
+                        ctx.score,
+                        now_a,
+                        Some(now_b),
+                    );
+                    d.context.insert("pair".to_string(), format!("{}-{}", i, j));
+                    d.context.insert("run_length".to_string(), run_len.to_string());
+                    d.context.insert("max".to_string(), MAX_CONSECUTIVE.to_string());
+                    d.context
+                        .insert("generic_interval".to_string(), cls.to_string());
+                    out.push(d);
+                    run_flagged = true;
+                }
+            }
         }
     }
     out
@@ -884,15 +1008,30 @@ fn r_single_climax(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
         let Some(max) = v.notes.iter().map(|n| n.midi).max() else {
             continue;
         };
-        let hits: Vec<&NoteEvent> = v.notes.iter().filter(|n| n.midi == max).collect();
-        if hits.len() > 1 {
+        let peak_ix: Vec<usize> = v
+            .notes
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, n)| if n.midi == max { Some(ix) } else { None })
+            .collect();
+        let mut independent_peaks: Vec<usize> = Vec::new();
+        for ix in peak_ix {
+            if let Some(prev_ix) = independent_peaks.last().copied() {
+                // Treat tied continuation of the same pitch as one sustained climax.
+                if ix == prev_ix + 1 && is_tied_repeat(&v.notes[prev_ix], &v.notes[ix]) {
+                    continue;
+                }
+            }
+            independent_peaks.push(ix);
+        }
+        if independent_peaks.len() > 1 {
             out.push(diag(
                 "gen.melody.single_climax_preferred",
                 Severity::Warning,
                 "multiple highest-note climaxes detected",
                 ctx.score,
-                hits[1],
-                Some(hits[0]),
+                &v.notes[independent_peaks[1]],
+                Some(&v.notes[independent_peaks[0]]),
             ));
         }
     }
@@ -907,9 +1046,8 @@ fn r_consecutive_large_leaps(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
         for w in v.notes.windows(3) {
             let d1 = w[1].midi - w[0].midi;
             let d2 = w[2].midi - w[1].midi;
-            let both_large =
-                d1.abs() >= params.large_leap_min_semitones
-                    && d2.abs() >= params.large_leap_min_semitones;
+            let both_large = d1.abs() >= params.large_leap_min_semitones
+                && d2.abs() >= params.large_leap_min_semitones;
             let dir_ok = if params.same_direction_only {
                 d1.signum() == d2.signum()
             } else {
@@ -925,6 +1063,67 @@ fn r_consecutive_large_leaps(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
                     Some(&w[1]),
                 ));
             }
+        }
+    }
+    out
+}
+
+fn is_tied_repeat(prev: &NoteEvent, next: &NoteEvent) -> bool {
+    prev.midi == next.midi
+        && prev.start_tick + prev.duration_ticks == next.start_tick
+        && (prev.tie_start || next.tie_end)
+}
+
+fn r_melodic_repeated_pitch_species_profiled(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let Some(sp) = species_number(ctx.preset_id) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for v in &ctx.score.voices {
+        for w in v.notes.windows(2) {
+            if w[0].midi != w[1].midi {
+                continue;
+            }
+            let tied = is_tied_repeat(&w[0], &w[1]);
+            let (should_emit, severity, msg) = match sp {
+                1 => (
+                    true,
+                    Severity::Error,
+                    "species 1 forbids repeated melodic notes",
+                ),
+                2 | 3 => (
+                    true,
+                    Severity::Warning,
+                    "repeated melodic notes are discouraged in this species",
+                ),
+                4 => (
+                    !tied,
+                    Severity::Error,
+                    "species 4 repeated notes should be tie-linked",
+                ),
+                5 => (
+                    !tied,
+                    Severity::Warning,
+                    "repeated melodic notes are discouraged unless tie-linked",
+                ),
+                _ => (false, Severity::Warning, ""),
+            };
+            if !should_emit {
+                continue;
+            }
+            let mut d = diag(
+                "gen.melody.repeated_pitch_species_profiled",
+                severity,
+                msg,
+                ctx.score,
+                &w[1],
+                Some(&w[0]),
+            );
+            d.context.insert("species".to_string(), sp.to_string());
+            d.context
+                .insert("voice_index".to_string(), v.voice_index.to_string());
+            d.context.insert("tie_linked".to_string(), tied.to_string());
+            out.push(d);
         }
     }
     out
@@ -1007,8 +1206,10 @@ fn r_contrary_oblique_preferred(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic
             .insert("pair".to_string(), format!("{}-{}", vi, vj));
         d.context
             .insert("similar_count".to_string(), similar.to_string());
-        d.context.insert("total_count".to_string(), total.to_string());
-        d.context.insert("ratio".to_string(), format!("{:.4}", ratio));
+        d.context
+            .insert("total_count".to_string(), total.to_string());
+        d.context
+            .insert("ratio".to_string(), format!("{:.4}", ratio));
         d.context.insert(
             "threshold".to_string(),
             params.similar_motion_ratio_max.to_string(),
@@ -1039,6 +1240,15 @@ fn r_final_perfect_cadence(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
 
 fn r_p4_against_bass(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     if ctx.score.voices.len() != 2 {
+        return Vec::new();
+    }
+    // In species 2-5, dissonance treatment is governed by dedicated species rules
+    // (weak-beat passing/neighbor tones, suspensions, etc.). A blanket P4 error
+    // would over-report valid licensed dissonances.
+    if matches!(
+        ctx.preset_id,
+        PresetId::Species2 | PresetId::Species3 | PresetId::Species4 | PresetId::Species5
+    ) {
         return Vec::new();
     }
     let mut out = Vec::new();
@@ -1141,8 +1351,8 @@ fn tonal_chord_checks<'a>(
     Vec<&'a NoteEvent>,
     u8,
     Option<u8>,
-    Option<&'static str>,
-    &'static str,
+    Option<String>,
+    String,
 )> {
     let mut out = Vec::new();
     for tick in all_start_ticks(ctx.score) {
@@ -1155,13 +1365,15 @@ fn tonal_chord_checks<'a>(
         if notes.is_empty() {
             continue;
         }
-        let bass_pc = notes.iter().map(|n| n.midi).min().unwrap_or(60).rem_euclid(12) as u8;
-        let mut pcs: Vec<u8> = notes.iter().map(|n| n.midi.rem_euclid(12) as u8).collect();
-        pcs.sort_unstable();
-        pcs.dedup();
-        let (root, q) = detect_quality_root(&pcs);
-        let inv = root.map(|r| inversion_from_bass(r, bass_pc)).unwrap_or("other");
-        out.push((tick, notes, bass_pc, root, q, inv));
+        let bass_pc = notes
+            .iter()
+            .map(|n| n.midi)
+            .min()
+            .unwrap_or(60)
+            .rem_euclid(12) as u8;
+        let chord = identify_chord(ctx.score, &notes);
+        let inv = chord.inversion.unwrap_or_else(|| "other".to_string());
+        out.push((tick, notes, bass_pc, chord.root_pc, chord.quality, inv));
     }
     out
 }
@@ -1203,7 +1415,7 @@ fn r_first_inv_no_bass_double(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> 
             .iter()
             .filter(|n| n.midi.rem_euclid(12) as u8 == bass_pc)
             .count();
-        if cnt > 1 && quality != Some("diminished") {
+        if cnt > 1 && quality.as_deref() != Some("diminished") {
             out.push(diag(
                 "gen.doubling.first_inversion_no_bass_double_default",
                 Severity::Warning,
@@ -1220,7 +1432,7 @@ fn r_first_inv_no_bass_double(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> 
 fn r_dim_first_inv_double_third(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     let mut out = Vec::new();
     for (_tick, notes, bass_pc, _root, quality, inv) in tonal_chord_checks(ctx) {
-        if inv == "first" && quality == Some("diminished") {
+        if inv == "first" && quality.as_deref() == Some("diminished") {
             let cnt = notes
                 .iter()
                 .filter(|n| n.midi.rem_euclid(12) as u8 == bass_pc)
@@ -1270,7 +1482,7 @@ fn r_cadential_64(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     for w in checks.windows(2) {
         let (_t0, n0, _b0, _r0, _q0, inv0) = &w[0];
         let (_t1, _n1, _b1, _r1, _q1, inv1) = &w[1];
-        if *inv0 == "second" && *inv1 == "second" {
+        if inv0 == "second" && inv1 == "second" {
             out.push(diag(
                 "gen.cadence.cadential_64_resolves_65_43",
                 Severity::Error,
@@ -1291,6 +1503,191 @@ fn r_nct_supported(_ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
 
 fn r_spacing_alias(_ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     Vec::new()
+}
+
+fn active_pair_at_tick(score: &NormalizedScore, tick: u32) -> Option<(&NoteEvent, &NoteEvent)> {
+    if score.voices.len() < 2 {
+        return None;
+    }
+    let a = active_note_at(&score.voices[0].notes, tick)?;
+    let b = active_note_at(&score.voices[1].notes, tick)?;
+    Some((a, b))
+}
+
+fn r_opening_interval_by_position(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    if species_number(ctx.preset_id).is_none() {
+        return Vec::new();
+    }
+    let Some((cp, cf)) = pair_notes(ctx.score) else {
+        return Vec::new();
+    };
+    let (Some(cp0), Some(cf0)) = (cp.first(), cf.first()) else {
+        return Vec::new();
+    };
+    let tonic = ctx.score.meta.key_signature.tonic_pc;
+    let dom = (tonic + 7) % 12;
+    let cp_pc = cp0.midi.rem_euclid(12) as u8;
+    let cp_below = cp0.midi < cf0.midi;
+
+    let ok = if cp_below {
+        cp_pc == tonic
+    } else {
+        cp_pc == tonic || cp_pc == dom
+    };
+    if ok {
+        return Vec::new();
+    }
+    vec![diag(
+        "gen.opening.interval_by_position_species_profiled",
+        Severity::Error,
+        if cp_below {
+            "when counterpoint starts below the cantus, opening pitch should be tonic (do)"
+        } else {
+            "opening counterpoint pitch should be tonic (do) or dominant (sol)"
+        },
+        ctx.score,
+        cp0,
+        Some(cf0),
+    )]
+}
+
+fn r_clausula_vera(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    if species_number(ctx.preset_id).is_none() {
+        return Vec::new();
+    }
+    let Some((cp, cf)) = pair_notes(ctx.score) else {
+        return Vec::new();
+    };
+    if cp.len() < 2 || cf.len() < 2 {
+        return Vec::new();
+    }
+    let cp_prev = &cp[cp.len() - 2];
+    let cp_last = &cp[cp.len() - 1];
+    let cf_prev = &cf[cf.len() - 2];
+    let cf_last = &cf[cf.len() - 1];
+
+    let tonic = ctx.score.meta.key_signature.tonic_pc;
+    let cp_last_pc = cp_last.midi.rem_euclid(12) as u8;
+    let cp_prev_pc = cp_prev.midi.rem_euclid(12) as u8;
+    let cf_prev_pc = cf_prev.midi.rem_euclid(12) as u8;
+
+    let final_is_perfect = is_perfect(interval_pc(cp_last.midi, cf_last.midi));
+    let cp_final_is_tonic = cp_last_pc == tonic;
+
+    let dcp = cp_last.midi - cp_prev.midi;
+    let dcf = cf_last.midi - cf_prev.midi;
+    let contrary_stepwise = dcp != 0
+        && dcf != 0
+        && dcp.abs() <= 2
+        && dcf.abs() <= 2
+        && dcp.signum() != dcf.signum();
+
+    let expected_formula = if cf_prev_pc == (tonic + 2) % 12 {
+        cp_prev_pc == (tonic + 11) % 12
+    } else if cf_prev_pc == (tonic + 11) % 12 {
+        cp_prev_pc == (tonic + 2) % 12
+    } else {
+        true
+    };
+
+    if final_is_perfect && cp_final_is_tonic && contrary_stepwise && expected_formula {
+        return Vec::new();
+    }
+
+    let mut d = diag(
+        "gen.cadence.clausula_vera_required",
+        Severity::Error,
+        "ending should follow clausula vera profile (tonic final, contrary stepwise approach, penultimate formula)",
+        ctx.score,
+        cp_last,
+        Some(cf_last),
+    );
+    d.context
+        .insert("final_is_perfect".to_string(), final_is_perfect.to_string());
+    d.context
+        .insert("cp_final_is_tonic".to_string(), cp_final_is_tonic.to_string());
+    d.context.insert(
+        "contrary_stepwise_approach".to_string(),
+        contrary_stepwise.to_string(),
+    );
+    d.context.insert(
+        "formula_match".to_string(),
+        expected_formula.to_string(),
+    );
+    vec![d]
+}
+
+fn r_two_voice_max_distance(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    if ctx.score.voices.len() != 2 {
+        return Vec::new();
+    }
+    // Uses semitone approximations for compound intervals with MIDI-only input:
+    // <= M10 (16 semitones) allowed, > M10 warning, > P12 (19 semitones) error.
+    let mut out = Vec::new();
+    for (_tick, a, b) in sample_two_voice(ctx.score) {
+        let dist = (a.midi - b.midi).abs();
+        if dist > 19 {
+            out.push(diag(
+                "gen.spacing.two_voice_max_distance",
+                Severity::Error,
+                "two-voice spacing exceeds a twelfth",
+                ctx.score,
+                a,
+                Some(b),
+            ));
+        } else if dist > 16 {
+            out.push(diag(
+                "gen.spacing.two_voice_max_distance",
+                Severity::Warning,
+                "two-voice spacing exceeds a tenth",
+                ctx.score,
+                a,
+                Some(b),
+            ));
+        }
+    }
+    out
+}
+
+fn r_climax_non_coincident(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    if ctx.score.voices.len() < 2 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for i in 0..ctx.score.voices.len() {
+        for j in (i + 1)..ctx.score.voices.len() {
+            let vi = &ctx.score.voices[i];
+            let vj = &ctx.score.voices[j];
+            let Some(max_i) = vi.notes.iter().map(|n| n.midi).max() else {
+                continue;
+            };
+            let Some(max_j) = vj.notes.iter().map(|n| n.midi).max() else {
+                continue;
+            };
+            let highs_i: Vec<&NoteEvent> = vi.notes.iter().filter(|n| n.midi == max_i).collect();
+            let highs_j: Vec<&NoteEvent> = vj.notes.iter().filter(|n| n.midi == max_j).collect();
+            let mut hit: Option<(&NoteEvent, &NoteEvent)> = None;
+            for ni in &highs_i {
+                if let Some(nj) = highs_j.iter().copied().find(|nj| nj.start_tick == ni.start_tick) {
+                    hit = Some((ni, nj));
+                    break;
+                }
+            }
+            if let Some((ni, nj)) = hit {
+                let mut d = diag(
+                    "gen.melody.climax_non_coincident_between_voices",
+                    Severity::Warning,
+                    "voice climaxes should not coincide",
+                    ctx.score,
+                    ni,
+                    Some(nj),
+                );
+                d.context.insert("pair".to_string(), format!("{}-{}", i, j));
+                out.push(d);
+            }
+        }
+    }
+    out
 }
 
 fn r_sp1_rhythm(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
@@ -1391,10 +1788,12 @@ fn r_sp2_rhythm(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     let Some((cp, cf)) = pair_notes(ctx.score) else {
         return Vec::new();
     };
-    if cp.len() == cf.len() * 2 {
+    if species_ratio_with_terminal_cadence_ok(cp, cf, 2) {
         return Vec::new();
     }
-    let Some(n) = cp.first() else { return Vec::new(); };
+    let Some(n) = cp.first() else {
+        return Vec::new();
+    };
     vec![diag(
         "sp2.rhythm.two_to_one_only",
         Severity::Error,
@@ -1435,6 +1834,94 @@ fn cp_note_neighbors(cp: &[NoteEvent], tick: u32) -> Option<(&NoteEvent, &NoteEv
     None
 }
 
+fn cp_index_at_tick(cp: &[NoteEvent], tick: u32) -> Option<usize> {
+    cp.iter()
+        .position(|n| n.start_tick <= tick && tick < n.start_tick + n.duration_ticks)
+}
+
+fn is_step_interval(d: i16) -> bool {
+    d != 0 && d.abs() <= 2
+}
+
+fn is_passing_motion(cp: &[NoteEvent], idx: usize) -> bool {
+    if idx == 0 || idx + 1 >= cp.len() {
+        return false;
+    }
+    let d1 = cp[idx].midi - cp[idx - 1].midi;
+    let d2 = cp[idx + 1].midi - cp[idx].midi;
+    is_step_interval(d1) && is_step_interval(d2) && d1.signum() == d2.signum()
+}
+
+fn is_neighbor_motion(cp: &[NoteEvent], idx: usize) -> bool {
+    if idx == 0 || idx + 1 >= cp.len() {
+        return false;
+    }
+    let d1 = cp[idx].midi - cp[idx - 1].midi;
+    let d2 = cp[idx + 1].midi - cp[idx].midi;
+    is_step_interval(d1)
+        && is_step_interval(d2)
+        && d1.signum() == -d2.signum()
+        && cp[idx - 1].midi == cp[idx + 1].midi
+}
+
+fn is_double_neighbor_window(w: &[NoteEvent]) -> bool {
+    if w.len() != 4 {
+        return false;
+    }
+    if w[0].midi != w[3].midi {
+        return false;
+    }
+    let d_up = w[1].midi - w[0].midi;
+    let d_down = w[2].midi - w[3].midi;
+    if !is_step_interval(d_up) || !is_step_interval(d_down) {
+        return false;
+    }
+    let rel1 = (w[1].midi - w[0].midi).signum();
+    let rel2 = (w[2].midi - w[0].midi).signum();
+    rel1 != 0 && rel2 != 0 && rel1 == -rel2
+}
+
+fn is_double_neighbor_member(cp: &[NoteEvent], idx: usize) -> bool {
+    if cp.len() < 4 {
+        return false;
+    }
+    for s in 0..=(cp.len() - 4) {
+        if idx != s + 1 && idx != s + 2 {
+            continue;
+        }
+        if is_double_neighbor_window(&cp[s..s + 4]) {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_cambiata_at(cp: &[NoteEvent], idx: usize) -> bool {
+    if idx == 0 || idx + 3 >= cp.len() {
+        return false;
+    }
+    let d1 = cp[idx].midi - cp[idx - 1].midi;
+    let d2 = cp[idx + 1].midi - cp[idx].midi;
+    let d3 = cp[idx + 2].midi - cp[idx + 1].midi;
+    let d4 = cp[idx + 3].midi - cp[idx + 2].midi;
+    // Classical cambiata contour: step down to dissonance, leap down, then step up twice.
+    (d1 == -1 || d1 == -2)
+        && d2 <= -3
+        && is_step_interval(d3)
+        && is_step_interval(d4)
+        && d3 > 0
+        && d4 > 0
+}
+
+fn is_escape_motion(cp: &[NoteEvent], idx: usize) -> bool {
+    if idx == 0 || idx + 1 >= cp.len() {
+        return false;
+    }
+    let d1 = cp[idx].midi - cp[idx - 1].midi;
+    let d2 = cp[idx + 1].midi - cp[idx].midi;
+    is_step_interval(d1) && d2.abs() >= 3 && d1.signum() == -d2.signum()
+}
+
 fn r_sp2_weak_passing(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     let Some((cp, cf)) = pair_notes(ctx.score) else {
         return Vec::new();
@@ -1450,7 +1937,15 @@ fn r_sp2_weak_passing(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
         if let Some((p, c, n)) = cp_note_neighbors(cp, tick) {
             let d1 = c.midi - p.midi;
             let d2 = n.midi - c.midi;
-            if !(d1.abs() <= 2 && d2.abs() <= 2 && d1.signum() == d2.signum()) {
+            let passing_stepwise =
+                is_step_interval(d1) && is_step_interval(d2) && d1.signum() == d2.signum();
+            let bounded_by_consonance = active_note_at(cf, p.start_tick)
+                .map(|x| is_consonant(interval_pc(p.midi, x.midi)))
+                .unwrap_or(false)
+                && active_note_at(cf, n.start_tick)
+                    .map(|x| is_consonant(interval_pc(n.midi, x.midi)))
+                    .unwrap_or(false);
+            if !(passing_stepwise && bounded_by_consonance) {
                 out.push(diag(
                     "sp2.dissonance.weak_passing_stepwise",
                     Severity::Error,
@@ -1460,6 +1955,15 @@ fn r_sp2_weak_passing(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
                     Some(cf.iter().find(|x| x.note_id == b.note_id).unwrap_or(b)),
                 ));
             }
+        } else {
+            out.push(diag(
+                "sp2.dissonance.weak_passing_stepwise",
+                Severity::Error,
+                "weak-beat dissonance must be passing and stepwise",
+                ctx.score,
+                a,
+                Some(b),
+            ));
         }
     }
     out
@@ -1476,11 +1980,7 @@ fn r_sp2_downbeat_parallel(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
         let (_t1, a1, b1) = w[1];
         let i0 = interval_pc(a0.midi, b0.midi);
         let i1 = interval_pc(a1.midi, b1.midi);
-        if is_perfect(i0)
-            && is_perfect(i1)
-            && i0 == i1
-            && a0.midi != a1.midi
-            && b0.midi != b1.midi
+        if is_perfect(i0) && is_perfect(i1) && i0 == i1 && a0.midi != a1.midi && b0.midi != b1.midi
         {
             out.push(diag(
                 "sp2.structure.downbeat_skeleton_no_parallel_perfects",
@@ -1496,8 +1996,17 @@ fn r_sp2_downbeat_parallel(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
 }
 
 fn r_sp2_downbeat_unison(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let downbeat_ticks: Vec<u32> = sample_two_voice(ctx.score)
+        .into_iter()
+        .filter_map(|(tick, _, _)| is_downbeat(ctx.score, tick).then_some(tick))
+        .collect();
+    let first = downbeat_ticks.first().copied();
+    let last = downbeat_ticks.last().copied();
     let mut out = Vec::new();
     for (tick, a, b) in sample_two_voice(ctx.score) {
+        if Some(tick) == first || Some(tick) == last {
+            continue;
+        }
         if is_downbeat(ctx.score, tick) && a.midi == b.midi {
             out.push(diag(
                 "sp2.downbeat_unison_discouraged",
@@ -1512,14 +2021,148 @@ fn r_sp2_downbeat_unison(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     out
 }
 
+fn interval_class_downbeat(score: &NormalizedScore) -> Vec<(u32, &NoteEvent, &NoteEvent, u8)> {
+    sample_two_voice(score)
+        .into_iter()
+        .filter(|(tick, _, _)| is_downbeat(score, *tick))
+        .map(|(tick, a, b)| (tick, a, b, interval_pc(a.midi, b.midi)))
+        .collect()
+}
+
+fn r_sp2_downbeat_interval_repetition(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let downs = interval_class_downbeat(ctx.score);
+    if downs.len() < 2 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut imperfect_run_class: Option<u8> = None;
+    let mut imperfect_run_len: usize = 0;
+    for w in downs.windows(2) {
+        let (_t0, _a0, _b0, i0) = w[0];
+        let (_t1, a1, b1, i1) = w[1];
+        if is_perfect(i0) && i0 == i1 {
+            out.push(diag(
+                "sp2.structure.downbeat_interval_repetition_limits",
+                Severity::Error,
+                "species 2 should not repeat the same perfect interval on consecutive downbeats",
+                ctx.score,
+                a1,
+                Some(b1),
+            ));
+        }
+
+        let cls0 = imperfect_generic_class(i0);
+        let cls1 = imperfect_generic_class(i1);
+        if cls0.is_some() && cls0 == cls1 {
+            let cls = cls1.unwrap_or(0);
+            if imperfect_run_class == Some(cls) {
+                imperfect_run_len += 1;
+            } else {
+                imperfect_run_class = Some(cls);
+                imperfect_run_len = 2;
+            }
+            if imperfect_run_len > 3 {
+                out.push(diag(
+                    "sp2.structure.downbeat_interval_repetition_limits",
+                    Severity::Warning,
+                    "species 2 should avoid more than 3 downbeats in one imperfect interval class",
+                    ctx.score,
+                    a1,
+                    Some(b1),
+                ));
+                imperfect_run_class = None;
+                imperfect_run_len = 0;
+            }
+        } else {
+            imperfect_run_class = None;
+            imperfect_run_len = 0;
+        }
+    }
+    out
+}
+
+fn is_step(d: i16) -> bool {
+    d.abs() == 1 || d.abs() == 2
+}
+
+fn same_dir(a: i16, b: i16) -> bool {
+    (a > 0 && b > 0) || (a < 0 && b < 0)
+}
+
+fn r_sp2_weak_consonant_pattern_catalog(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let Some((cp, cf)) = pair_notes(ctx.score) else {
+        return Vec::new();
+    };
+    if cp.len() < 3 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for idx in 1..(cp.len() - 1) {
+        let n0 = &cp[idx - 1];
+        let n1 = &cp[idx];
+        let n2 = &cp[idx + 1];
+        if n1.start_tick % tpm(ctx.score) != tpm(ctx.score) / 2 {
+            continue;
+        }
+        let Some(cf_note) = active_note_at(cf, n1.start_tick) else {
+            continue;
+        };
+        if !is_consonant(interval_pc(n1.midi, cf_note.midi)) {
+            continue;
+        }
+
+        let d1 = n1.midi - n0.midi;
+        let d2 = n2.midi - n1.midi;
+        let ds = n2.midi - n0.midi;
+
+        let consonant_passing = is_step(d1) && is_step(d2) && same_dir(d1, d2) && ds.abs() <= 4;
+        let consonant_neighbor =
+            is_step(d1) && is_step(d2) && d1.signum() == -d2.signum() && n2.midi == n0.midi;
+        let substitution = d1.abs() == 5 && is_step(d2) && d1.signum() == -d2.signum();
+        let skipped_passing =
+            matches!(d1.abs(), 3 | 4) && is_step(d2) && same_dir(d1, d2) && ds.abs() <= 5;
+        let interval_subdivision = matches!(d1.abs(), 3 | 4 | 5)
+            && matches!(d2.abs(), 3 | 4 | 5)
+            && same_dir(d1, d2)
+            && matches!(ds.abs(), 7..=10);
+        let change_register =
+            matches!(d1.abs(), 7 | 8 | 9 | 12) && is_step(d2) && d1.signum() == -d2.signum();
+        let delay_progression =
+            matches!(d1.abs(), 3 | 4) && is_step(d2) && d1.signum() == -d2.signum() && is_step(ds);
+
+        if consonant_passing
+            || consonant_neighbor
+            || substitution
+            || skipped_passing
+            || interval_subdivision
+            || change_register
+            || delay_progression
+        {
+            continue;
+        }
+
+        out.push(diag(
+            "sp2.weak_beat.consonant_pattern_catalog",
+            Severity::Warning,
+            "weak-beat consonant is outside the standard species-2 pattern catalog",
+            ctx.score,
+            n1,
+            Some(n0),
+        ));
+    }
+    out
+}
+
 fn r_sp3_rhythm(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     let Some((cp, cf)) = pair_notes(ctx.score) else {
         return Vec::new();
     };
-    if cp.len() == cf.len() * 4 {
+    if species_ratio_with_terminal_cadence_ok(cp, cf, 4) {
         return Vec::new();
     }
-    let Some(n) = cp.first() else { return Vec::new(); };
+    let Some(n) = cp.first() else {
+        return Vec::new();
+    };
     vec![diag(
         "sp3.rhythm.four_to_one_only",
         Severity::Error,
@@ -1556,42 +2199,21 @@ fn r_sp3_patterns(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
         if is_downbeat(ctx.score, tick) || is_consonant(interval_pc(a.midi, b.midi)) {
             continue;
         }
-        if let Some((p, c, n)) = cp_note_neighbors(cp, tick) {
-            let d1 = c.midi - p.midi;
-            let d2 = n.midi - c.midi;
-            let passing_or_neighbor = d1.abs() <= 2 && d2.abs() <= 2;
-            if !passing_or_neighbor {
-                out.push(diag(
-                    "sp3.dissonance.passing_neighbor_patterns_only",
-                    Severity::Error,
-                    "species 3 dissonance must be passing/neighbor pattern",
-                    ctx.score,
-                    c,
-                    Some(b),
-                ));
-            }
-        }
-    }
-    out
-}
-
-fn r_sp3_double_neighbor(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
-    let Some((cp, _)) = pair_notes(ctx.score) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for w in cp.windows(4) {
-        if w[0].midi == w[3].midi {
+        let Some(idx) = cp_index_at_tick(cp, tick) else {
             continue;
-        }
-        if (w[1].midi - w[0].midi).abs() == 1 && (w[2].midi - w[0].midi).abs() == 1 {
+        };
+        let licensed = is_passing_motion(cp, idx)
+            || is_neighbor_motion(cp, idx)
+            || is_double_neighbor_member(cp, idx)
+            || is_cambiata_at(cp, idx);
+        if !licensed {
             out.push(diag(
-                "sp3.dissonance.double_neighbor_allowed_pattern",
-                Severity::Warning,
-                "possible malformed double-neighbor pattern",
+                "sp3.dissonance.passing_neighbor_patterns_only",
+                Severity::Error,
+                "species 3 dissonance must be passing/neighbor pattern",
                 ctx.score,
-                &w[1],
-                Some(&w[2]),
+                a,
+                Some(b),
             ));
         }
     }
@@ -1603,20 +2225,29 @@ fn r_sp3_cambiata(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    for w in cp.windows(5) {
-        let d1 = w[1].midi - w[0].midi;
-        let d2 = w[2].midi - w[1].midi;
-        let d3 = w[3].midi - w[2].midi;
-        let d4 = w[4].midi - w[3].midi;
-        let looks_cambiata = d1 == -1 && d2.abs() >= 3 && d3 == 1 && d4 == 1;
-        if d2.abs() >= 3 && !looks_cambiata {
+    let samples = sample_two_voice(ctx.score);
+    for (tick, cp_note, cf_note) in samples {
+        if is_downbeat(ctx.score, tick) {
+            continue;
+        }
+        if is_consonant(interval_pc(cp_note.midi, cf_note.midi)) {
+            continue;
+        }
+        let Some(idx) = cp_index_at_tick(cp, tick) else {
+            continue;
+        };
+        if idx + 1 >= cp.len() {
+            continue;
+        }
+        let leave = cp[idx + 1].midi - cp[idx].midi;
+        if leave.abs() >= 3 && !is_cambiata_at(cp, idx) {
             out.push(diag(
                 "sp3.dissonance.cambiata_limited_exception",
                 Severity::Warning,
                 "leap-from-dissonance should follow cambiata schema",
                 ctx.score,
-                &w[2],
-                Some(&w[3]),
+                cp_note,
+                Some(cf_note),
             ));
         }
     }
@@ -1624,8 +2255,17 @@ fn r_sp3_cambiata(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
 }
 
 fn r_sp3_downbeat_unison(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let downbeat_ticks: Vec<u32> = sample_two_voice(ctx.score)
+        .into_iter()
+        .filter_map(|(tick, _, _)| is_downbeat(ctx.score, tick).then_some(tick))
+        .collect();
+    let first = downbeat_ticks.first().copied();
+    let last = downbeat_ticks.last().copied();
     let mut out = Vec::new();
     for (tick, a, b) in sample_two_voice(ctx.score) {
+        if Some(tick) == first || Some(tick) == last {
+            continue;
+        }
         if is_downbeat(ctx.score, tick) && a.midi == b.midi {
             out.push(diag(
                 "sp3.downbeat_unison_forbidden",
@@ -1635,6 +2275,109 @@ fn r_sp3_downbeat_unison(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
                 a,
                 Some(b),
             ));
+        }
+    }
+    out
+}
+
+fn r_sp3_downbeat_interval_repetition(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let downs = interval_class_downbeat(ctx.score);
+    if downs.len() < 2 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+
+    let mut perfect_run_pc: Option<u8> = None;
+    let mut perfect_run_len: usize = 0;
+    let mut imperfect_run_class: Option<u8> = None;
+    let mut imperfect_run_len: usize = 0;
+
+    for (_tick, a, b, i) in downs {
+        if is_perfect(i) {
+            if perfect_run_pc == Some(i) {
+                perfect_run_len += 1;
+            } else {
+                perfect_run_pc = Some(i);
+                perfect_run_len = 1;
+            }
+            if perfect_run_len > 2 {
+                out.push(diag(
+                    "sp3.structure.downbeat_interval_repetition_limits",
+                    Severity::Error,
+                    "species 3 allows at most two consecutive downbeats in one perfect interval",
+                    ctx.score,
+                    a,
+                    Some(b),
+                ));
+                perfect_run_pc = Some(i);
+                perfect_run_len = 1;
+            }
+        } else {
+            perfect_run_pc = None;
+            perfect_run_len = 0;
+        }
+
+        if let Some(cls) = imperfect_generic_class(i) {
+            if imperfect_run_class == Some(cls) {
+                imperfect_run_len += 1;
+            } else {
+                imperfect_run_class = Some(cls);
+                imperfect_run_len = 1;
+            }
+            if imperfect_run_len > 3 {
+                out.push(diag(
+                    "sp3.structure.downbeat_interval_repetition_limits",
+                    Severity::Warning,
+                    "species 3 should avoid more than 3 downbeats in one imperfect interval class",
+                    ctx.score,
+                    a,
+                    Some(b),
+                ));
+                imperfect_run_class = Some(cls);
+                imperfect_run_len = 1;
+            }
+        } else {
+            imperfect_run_class = None;
+            imperfect_run_len = 0;
+        }
+    }
+    out
+}
+
+fn r_sp3_perfect_interval_proximity_guard(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let bt = beat_ticks(ctx.score);
+    let mut out = Vec::new();
+    for (tick, a, b) in sample_two_voice(ctx.score) {
+        if !is_downbeat(ctx.score, tick) {
+            continue;
+        }
+        let now = interval_pc(a.midi, b.midi);
+        let checks: &[u32] = if now == 7 {
+            &[1, 2] // previous beats 4 and 3
+        } else if now == 0 {
+            &[1, 2, 3] // previous beats 4,3,2
+        } else {
+            continue;
+        };
+
+        for off in checks {
+            let Some(prev_tick) = tick.checked_sub(bt * *off) else {
+                continue;
+            };
+            let Some((pa, pb)) = active_pair_at_tick(ctx.score, prev_tick) else {
+                continue;
+            };
+            if interval_pc(pa.midi, pb.midi) == now {
+                out.push(diag(
+                    "sp3.perfect_interval_proximity_guard",
+                    Severity::Error,
+                    "perfect interval appears too close before a structural downbeat perfect interval",
+                    ctx.score,
+                    a,
+                    Some(pa),
+                ));
+                break;
+            }
         }
     }
     out
@@ -1661,10 +2404,15 @@ fn r_sp4_syncopated(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     let Some((cp, _)) = pair_notes(ctx.score) else {
         return Vec::new();
     };
-    if cp.iter().any(|n| n.tie_start && (n.start_tick + n.duration_ticks) % tpm(ctx.score) == 0) {
+    if cp
+        .iter()
+        .any(|n| n.tie_start && (n.start_tick + n.duration_ticks) % tpm(ctx.score) == 0)
+    {
         return Vec::new();
     }
-    let Some(n) = cp.first() else { return Vec::new(); };
+    let Some(n) = cp.first() else {
+        return Vec::new();
+    };
     vec![diag(
         "sp4.rhythm.syncopated_ligature_profile",
         Severity::Error,
@@ -1675,17 +2423,82 @@ fn r_sp4_syncopated(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     )]
 }
 
+fn r_sp4_strict_entry_exit_profile(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let Some((cp, cf)) = pair_notes(ctx.score) else {
+        return Vec::new();
+    };
+    if cp.is_empty() || cf.len() < 2 {
+        return Vec::new();
+    }
+
+    let tonic = ctx.score.meta.key_signature.tonic_pc;
+    let mut reasons: Vec<&str> = Vec::new();
+
+    let cp0 = &cp[0];
+    if cp0.start_tick != tpq(ctx.score) * 2 {
+        reasons.push("entry should start after a half rest");
+    }
+
+    let cp_last = &cp[cp.len() - 1];
+    if cp_last.duration_ticks < tpm(ctx.score) {
+        reasons.push("final counterpoint note should cover the full last bar");
+    }
+    if cp_last.midi.rem_euclid(12) as u8 != tonic {
+        reasons.push("counterpoint final should be tonic");
+    }
+    if cp.len() >= 2 {
+        let cp_prev = &cp[cp.len() - 2];
+        if !is_step(cp_last.midi - cp_prev.midi) {
+            reasons.push("counterpoint cadence should approach final by step");
+        }
+    }
+
+    let cf_prev = &cf[cf.len() - 2];
+    let cf_last = &cf[cf.len() - 1];
+    if cf_last.midi.rem_euclid(12) as u8 != tonic {
+        reasons.push("cantus final should be tonic");
+    }
+    if cf_prev.midi.rem_euclid(12) as u8 != (tonic + 2) % 12 {
+        reasons.push("cantus penultimate should be re");
+    }
+    let dcf = cf_last.midi - cf_prev.midi;
+    if !(dcf == -1 || dcf == -2) {
+        reasons.push("cantus should end by descending step");
+    }
+
+    if reasons.is_empty() {
+        return Vec::new();
+    }
+    let mut d = diag(
+        "sp4.form.strict_entry_exit_profile",
+        Severity::Error,
+        "species 4 entry/exit profile violation",
+        ctx.score,
+        cp_last,
+        Some(cf_last),
+    );
+    d.context
+        .insert("reasons".to_string(), reasons.join("; "));
+    vec![d]
+}
+
 fn r_sp4_prep(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let Some((_, cf)) = pair_notes(ctx.score) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
-    for (n, _end, cf) in suspension_events(ctx) {
-        if !is_consonant(interval_pc(n.midi, cf.midi)) {
+    for (n, _end, cf_downbeat) in suspension_events(ctx) {
+        let Some(cf_prep) = active_note_at(cf, n.start_tick) else {
+            continue;
+        };
+        if !is_consonant(interval_pc(n.midi, cf_prep.midi)) {
             out.push(diag(
                 "sp4.suspension.preparation_required",
                 Severity::Error,
                 "suspension must be prepared by consonance",
                 ctx.score,
                 n,
-                Some(cf),
+                Some(cf_downbeat),
             ));
         }
     }
@@ -1723,20 +2536,26 @@ fn r_sp4_step_resolution(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     };
     let mut out = Vec::new();
     for (n, _end, cf) in suspension_events(ctx) {
-        let Some(ix) = cp.iter().position(|x| x.note_id == n.note_id) else {
+        let Some(held_ix) = cp_index_at_tick(cp, n.start_tick + n.duration_ticks) else {
             continue;
         };
-        if ix + 1 >= cp.len() {
+        let held = &cp[held_ix];
+        let downbeat_pc = interval_pc(held.midi, cf.midi);
+        // Consonant ties (e.g., 6-5, 5-6) are permitted in strict species 4.
+        if is_consonant(downbeat_pc) {
             continue;
         }
-        let d = cp[ix + 1].midi - cp[ix].midi;
+        if held_ix + 1 >= cp.len() {
+            continue;
+        }
+        let d = cp[held_ix + 1].midi - held.midi;
         if !(d == -1 || d == -2) {
             out.push(diag(
                 "sp4.suspension.step_resolution_required",
                 Severity::Error,
                 "suspension should resolve downward by step",
                 ctx.score,
-                &cp[ix],
+                held,
                 Some(cf),
             ));
         }
@@ -1744,17 +2563,135 @@ fn r_sp4_step_resolution(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     out
 }
 
-fn r_sp4_break_species(_ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
-    Vec::new()
+fn r_sp4_break_species(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let Some((cp, _)) = pair_notes(ctx.score) else {
+        return Vec::new();
+    };
+    if cp.is_empty() {
+        return Vec::new();
+    }
+    let tpm = tpm(ctx.score);
+    let end_tick = cp
+        .iter()
+        .map(|n| n.start_tick + n.duration_ticks)
+        .max()
+        .unwrap_or(0);
+    if end_tick <= tpm * 2 {
+        return Vec::new();
+    }
+    let measures = (end_tick / tpm) as usize;
+    if measures < 3 {
+        return Vec::new();
+    }
+
+    let mut breaks: Vec<usize> = Vec::new();
+    for m in 1..(measures - 1) {
+        let m_start = m as u32 * tpm;
+        let m_end = m_start + tpm;
+        let has_ligature = cp.iter().any(|n| {
+            n.start_tick >= m_start
+                && n.start_tick < m_end
+                && n.tie_start
+                && (n.start_tick + n.duration_ticks) % tpm == 0
+        });
+        if !has_ligature {
+            breaks.push(m);
+        }
+    }
+    if breaks.is_empty() {
+        return Vec::new();
+    }
+    let mut segments = 1usize;
+    for w in breaks.windows(2) {
+        if w[1] != w[0] + 1 {
+            segments += 1;
+        }
+    }
+    if breaks.len() <= 2 && segments <= 1 {
+        return Vec::new();
+    }
+
+    let m0 = breaks[0] as u32 * tpm;
+    let note = cp.iter().find(|n| n.start_tick >= m0).unwrap_or(&cp[0]);
+    let mut d = diag(
+        "sp4.form.break_species_budget",
+        Severity::Warning,
+        "species-4 break-species usage exceeds recommended budget",
+        ctx.score,
+        note,
+        None,
+    );
+    d.context
+        .insert("break_measures".to_string(), breaks.len().to_string());
+    d.context
+        .insert("break_segments".to_string(), segments.to_string());
+    vec![d]
+}
+
+fn r_sp4_suspension_density_minimum(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let Some((cp, _)) = pair_notes(ctx.score) else {
+        return Vec::new();
+    };
+    let events = suspension_events(ctx);
+    if events.is_empty() {
+        let Some(n) = cp.first() else {
+            return Vec::new();
+        };
+        return vec![diag(
+            "sp4.suspension_density_minimum",
+            Severity::Warning,
+            "species 4 should include dissonant suspensions regularly",
+            ctx.score,
+            n,
+            None,
+        )];
+    }
+    let mut dissonant = 0usize;
+    for (_n, end, cf_note) in &events {
+        let Some(ix) = cp_index_at_tick(cp, *end) else {
+            continue;
+        };
+        let held = &cp[ix];
+        if !is_consonant(interval_pc(held.midi, cf_note.midi)) {
+            dissonant += 1;
+        }
+    }
+    let density = dissonant as f32 / events.len() as f32;
+    if density >= 0.5 {
+        return Vec::new();
+    }
+    let note = events
+        .first()
+        .map(|(n, _, _)| *n)
+        .or_else(|| cp.first())
+        .unwrap_or(&cp[0]);
+    let mut d = diag(
+        "sp4.suspension_density_minimum",
+        Severity::Warning,
+        "species 4 should use more dissonant suspensions",
+        ctx.score,
+        note,
+        None,
+    );
+    d.context.insert("density".to_string(), format!("{:.3}", density));
+    d.context
+        .insert("dissonant".to_string(), dissonant.to_string());
+    d.context
+        .insert("total_events".to_string(), events.len().to_string());
+    vec![d]
 }
 
 fn r_sp4_allowed_classes(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     let mut out = Vec::new();
     for (n, end, cf) in suspension_events(ctx) {
-        let Some(cp_active) = pair_notes(ctx.score).and_then(|(cp, _)| active_note_at(cp, end)) else {
+        let Some(cp_active) = pair_notes(ctx.score).and_then(|(cp, _)| active_note_at(cp, end))
+        else {
             continue;
         };
         let pc = interval_pc(cp_active.midi, cf.midi);
+        if is_consonant(pc) {
+            continue;
+        }
         if !matches!(pc, 2 | 5 | 10 | 11) {
             out.push(diag(
                 "sp4.allowed_suspension_classes_enforced",
@@ -1825,7 +2762,9 @@ fn r_sp5_rhythm_mixed(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     if lens.len() >= 2 {
         return Vec::new();
     }
-    let Some(n) = cp.first() else { return Vec::new(); };
+    let Some(n) = cp.first() else {
+        return Vec::new();
+    };
     vec![diag(
         "sp5.rhythm.mixed_species_profile",
         Severity::Error,
@@ -1954,16 +2893,22 @@ fn r_sp5_dissonance_patterns(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
                     Some(b),
                 ));
             }
-        } else if let Some((p, c, n)) = cp_note_neighbors(cp, tick) {
-            let d1 = c.midi - p.midi;
-            let d2 = n.midi - c.midi;
-            if !(d1.abs() <= 2 && d2.abs() <= 2) {
+        } else {
+            let Some(idx) = cp_index_at_tick(cp, tick) else {
+                continue;
+            };
+            let licensed = is_passing_motion(cp, idx)
+                || is_neighbor_motion(cp, idx)
+                || is_double_neighbor_member(cp, idx)
+                || is_cambiata_at(cp, idx)
+                || is_escape_motion(cp, idx);
+            if !licensed {
                 out.push(diag(
                     "sp5.dissonance.licensed_patterns_only",
                     Severity::Error,
-                    "weak-beat dissonance must fit passing/neighbor-type motion",
+                    "weak-beat dissonance must fit licensed florid pattern",
                     ctx.score,
-                    c,
+                    a,
                     Some(b),
                 ));
             }
@@ -2001,7 +2946,10 @@ fn rule(id: &'static str, eval: fn(&RuleContext<'_>) -> Vec<AnalysisDiagnostic>)
 
 pub fn rule_registry() -> HashMap<RuleId, Box<dyn Rule>> {
     let rules: Vec<Box<dyn Rule>> = vec![
-        rule("gen.input.single_exercise_per_file", r_gen_input_single_exercise),
+        rule(
+            "gen.input.single_exercise_per_file",
+            r_gen_input_single_exercise,
+        ),
         rule(
             "gen.input.key_signature_required_and_stable",
             r_gen_input_key_sig,
@@ -2013,10 +2961,27 @@ pub fn rule_registry() -> HashMap<RuleId, Box<dyn Rule>> {
             "gen.input_min_note_length.eighth_or_longer",
             r_gen_input_min_note_len,
         ),
-        rule("gen.harmony.supported_sonorities", r_gen_harmony_supported_sonorities),
-        rule("gen.motion.parallel_perfects_forbidden", r_parallel_perfects),
+        rule(
+            "gen.harmony.supported_sonorities",
+            r_gen_harmony_supported_sonorities,
+        ),
+        rule(
+            "gen.motion.parallel_perfects_forbidden",
+            r_parallel_perfects,
+        ),
         rule("gen.motion.direct_perfects_restricted", r_direct_perfects),
-        rule("gen.spacing.upper_adjacent_max_octave", r_spacing_upper_octave),
+        rule(
+            "gen.motion.consecutive_parallel_imperfects_limited",
+            r_consecutive_parallel_imperfects,
+        ),
+        rule(
+            "gen.spacing.two_voice_max_distance",
+            r_two_voice_max_distance,
+        ),
+        rule(
+            "gen.spacing.upper_adjacent_max_octave",
+            r_spacing_upper_octave,
+        ),
         rule("gen.spacing.tenor_bass_max_twelfth", r_spacing_tenor_bass),
         rule("gen.spacing.*", r_spacing_alias),
         rule(
@@ -2039,9 +3004,22 @@ pub fn rule_registry() -> HashMap<RuleId, Box<dyn Rule>> {
             r_consecutive_large_leaps,
         ),
         rule(
+            "gen.melody.repeated_pitch_species_profiled",
+            r_melodic_repeated_pitch_species_profiled,
+        ),
+        rule(
+            "gen.melody.climax_non_coincident_between_voices",
+            r_climax_non_coincident,
+        ),
+        rule(
             "gen.motion.contrary_and_oblique_preferred",
             r_contrary_oblique_preferred,
         ),
+        rule(
+            "gen.opening.interval_by_position_species_profiled",
+            r_opening_interval_by_position,
+        ),
+        rule("gen.cadence.clausula_vera_required", r_clausula_vera),
         rule(
             "gen.cadence.final_perfect_consonance_required",
             r_final_perfect_cadence,
@@ -2050,13 +3028,22 @@ pub fn rule_registry() -> HashMap<RuleId, Box<dyn Rule>> {
             "gen.interval.p4_dissonant_against_bass_in_two_voice",
             r_p4_against_bass,
         ),
-        rule("gen.voice.leading_tone_not_doubled", r_leading_tone_not_doubled),
+        rule(
+            "gen.voice.leading_tone_not_doubled",
+            r_leading_tone_not_doubled,
+        ),
         rule(
             "gen.voice.chordal_seventh_resolves_down",
             r_chordal_seventh_resolves_down,
         ),
-        rule("gen.voice.leading_tone_resolves_up", r_leading_tone_resolves_up),
-        rule("gen.doubling.root_position_prefers_root", r_double_root_pref),
+        rule(
+            "gen.voice.leading_tone_resolves_up",
+            r_leading_tone_resolves_up,
+        ),
+        rule(
+            "gen.doubling.root_position_prefers_root",
+            r_double_root_pref,
+        ),
         rule(
             "gen.doubling.first_inversion_no_bass_double_default",
             r_first_inv_no_bass_double,
@@ -2065,11 +3052,11 @@ pub fn rule_registry() -> HashMap<RuleId, Box<dyn Rule>> {
             "gen.doubling.diminished_first_inversion_double_third",
             r_dim_first_inv_double_third,
         ),
-        rule("gen.doubling.second_inversion_double_bass", r_second_inv_double_bass),
         rule(
-            "gen.cadence.cadential_64_resolves_65_43",
-            r_cadential_64,
+            "gen.doubling.second_inversion_double_bass",
+            r_second_inv_double_bass,
         ),
+        rule("gen.cadence.cadential_64_resolves_65_43", r_cadential_64),
         rule(
             "gen.nct.appoggiatura_escape_anticipation_pedal_retardation_supported",
             r_nct_supported,
@@ -2089,6 +3076,14 @@ pub fn rule_registry() -> HashMap<RuleId, Box<dyn Rule>> {
             "sp2.structure.downbeat_skeleton_no_parallel_perfects",
             r_sp2_downbeat_parallel,
         ),
+        rule(
+            "sp2.structure.downbeat_interval_repetition_limits",
+            r_sp2_downbeat_interval_repetition,
+        ),
+        rule(
+            "sp2.weak_beat.consonant_pattern_catalog",
+            r_sp2_weak_consonant_pattern_catalog,
+        ),
         rule("sp2.downbeat_unison_discouraged", r_sp2_downbeat_unison),
         rule("sp3.rhythm.four_to_one_only", r_sp3_rhythm),
         rule("sp3.strong_beat.consonance_required", r_sp3_strong),
@@ -2096,25 +3091,38 @@ pub fn rule_registry() -> HashMap<RuleId, Box<dyn Rule>> {
             "sp3.dissonance.passing_neighbor_patterns_only",
             r_sp3_patterns,
         ),
+        rule("sp3.dissonance.cambiata_limited_exception", r_sp3_cambiata),
         rule(
-            "sp3.dissonance.double_neighbor_allowed_pattern",
-            r_sp3_double_neighbor,
+            "sp3.structure.downbeat_interval_repetition_limits",
+            r_sp3_downbeat_interval_repetition,
         ),
         rule(
-            "sp3.dissonance.cambiata_limited_exception",
-            r_sp3_cambiata,
+            "sp3.perfect_interval_proximity_guard",
+            r_sp3_perfect_interval_proximity_guard,
         ),
         rule("sp3.downbeat_unison_forbidden", r_sp3_downbeat_unison),
         rule("sp4.rhythm.syncopated_ligature_profile", r_sp4_syncopated),
+        rule(
+            "sp4.form.strict_entry_exit_profile",
+            r_sp4_strict_entry_exit_profile,
+        ),
         rule("sp4.suspension.preparation_required", r_sp4_prep),
         rule(
             "sp4.suspension.downbeat_dissonance_allowed_only_if_suspension",
             r_sp4_downbeat_dissonance,
         ),
-        rule("sp4.suspension.step_resolution_required", r_sp4_step_resolution),
+        rule(
+            "sp4.suspension.step_resolution_required",
+            r_sp4_step_resolution,
+        ),
         rule(
             "sp4.break_species.allowed_when_no_ligature_possible",
-            r_sp4_break_species,
+            r_adv_noop,
+        ),
+        rule("sp4.form.break_species_budget", r_sp4_break_species),
+        rule(
+            "sp4.suspension_density_minimum",
+            r_sp4_suspension_density_minimum,
         ),
         rule(
             "sp4.allowed_suspension_classes_enforced",
@@ -2130,8 +3138,14 @@ pub fn rule_registry() -> HashMap<RuleId, Box<dyn Rule>> {
             "sp5.strong_beat.consonance_or_prepared_suspension_only",
             r_sp5_strong,
         ),
-        rule("sp5.eighth_notes.weak_position_pairs_only", r_sp5_eighth_weak),
-        rule("sp5.dissonance.licensed_patterns_only", r_sp5_dissonance_patterns),
+        rule(
+            "sp5.eighth_notes.weak_position_pairs_only",
+            r_sp5_eighth_weak,
+        ),
+        rule(
+            "sp5.dissonance.licensed_patterns_only",
+            r_sp5_dissonance_patterns,
+        ),
         rule("sp5.cadence.strict_closure_required", r_sp5_cadence),
         rule(
             "sp5.eighth_grouping_no_triplet_like_clusters",
@@ -2146,10 +3160,7 @@ pub fn rule_registry() -> HashMap<RuleId, Box<dyn Rule>> {
             "adv.invertible.tenth_avoid_parallel_3_6_sources",
             r_adv_noop,
         ),
-        rule(
-            "adv.invertible.twelfth_limit_structural_sixths",
-            r_adv_noop,
-        ),
+        rule("adv.invertible.twelfth_limit_structural_sixths", r_adv_noop),
     ];
 
     let mut m: HashMap<RuleId, Box<dyn Rule>> = HashMap::new();
@@ -2232,12 +3243,58 @@ mod tests {
         }
     }
 
+    fn mk_two_voice_score(
+        cp: &[(i16, u32, bool, bool)],
+        cf: &[(i16, u32, bool, bool)],
+        numerator: u8,
+        denominator: u8,
+    ) -> NormalizedScore {
+        fn mk_voice(voice_index: u8, name: &str, spec: &[(i16, u32, bool, bool)]) -> Voice {
+            let mut tick = 0u32;
+            let mut notes = Vec::new();
+            for (i, (midi, dur, tie_start, tie_end)) in spec.iter().copied().enumerate() {
+                notes.push(NoteEvent {
+                    note_id: format!("{}_{}", name, i),
+                    voice_index,
+                    midi,
+                    start_tick: tick,
+                    duration_ticks: dur,
+                    tie_start,
+                    tie_end,
+                });
+                tick += dur;
+            }
+            Voice {
+                voice_index,
+                name: name.to_string(),
+                notes,
+            }
+        }
+
+        NormalizedScore {
+            meta: ScoreMeta {
+                exercise_count: 1,
+                key_signature: KeySignature {
+                    tonic_pc: 0,
+                    mode: ScaleMode::Major,
+                },
+                time_signature: TimeSignature {
+                    numerator,
+                    denominator,
+                },
+                ticks_per_quarter: 480,
+            },
+            voices: vec![mk_voice(0, "cp", cp), mk_voice(1, "cf", cf)],
+        }
+    }
+
     #[test]
     fn registry_contains_all_canonical_ids() {
         let reg = rule_registry();
         assert!(reg.contains_key("gen.input.single_exercise_per_file"));
         assert!(reg.contains_key("sp5.cadence.strict_closure_required"));
         assert!(reg.contains_key("gen.voice.leading_tone_not_doubled"));
+        assert!(reg.contains_key("gen.motion.consecutive_parallel_imperfects_limited"));
     }
 
     #[test]
@@ -2251,6 +3308,1498 @@ mod tests {
         };
         let d = r_direct_perfects(&ctx);
         assert!(d.is_empty());
+    }
+
+    #[test]
+    fn p4_rule_is_suppressed_for_species2_profile() {
+        let score = NormalizedScore {
+            meta: ScoreMeta {
+                exercise_count: 1,
+                key_signature: KeySignature {
+                    tonic_pc: 0,
+                    mode: ScaleMode::Major,
+                },
+                time_signature: TimeSignature {
+                    numerator: 4,
+                    denominator: 4,
+                },
+                ticks_per_quarter: 480,
+            },
+            voices: vec![
+                Voice {
+                    voice_index: 0,
+                    name: "cp".to_string(),
+                    notes: vec![
+                        NoteEvent {
+                            note_id: "cp0".to_string(),
+                            voice_index: 0,
+                            midi: 60,
+                            start_tick: 0,
+                            duration_ticks: 960,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                        // weak beat note forms P4 (F over C) and is valid passing context for species 2
+                        NoteEvent {
+                            note_id: "cp1".to_string(),
+                            voice_index: 0,
+                            midi: 65,
+                            start_tick: 960,
+                            duration_ticks: 960,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                    ],
+                },
+                Voice {
+                    voice_index: 1,
+                    name: "cf".to_string(),
+                    notes: vec![NoteEvent {
+                        note_id: "cf0".to_string(),
+                        voice_index: 1,
+                        midi: 53,
+                        start_tick: 0,
+                        duration_ticks: 1920,
+                        tie_start: false,
+                        tie_end: false,
+                    }],
+                },
+            ],
+        };
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let d = r_p4_against_bass(&ctx);
+        assert!(d.is_empty());
+    }
+
+    #[test]
+    fn sp2_rhythm_allows_single_long_final_cadence_note() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (62, 960, false, false),
+                (64, 1920, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let d = r_sp2_rhythm(&ctx);
+        assert!(d.is_empty(), "expected cadential long-note exception, got: {:?}", d);
+    }
+
+    #[test]
+    fn sp2_rhythm_rejects_non_terminal_ratio_break() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 1920, false, false),
+                (62, 960, false, false),
+                (64, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let d = r_sp2_rhythm(&ctx);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].rule_id, "sp2.rhythm.two_to_one_only");
+    }
+
+    #[test]
+    fn sp3_rhythm_allows_single_long_final_cadence_note() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 480, false, false),
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (67, 1920, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        let d = r_sp3_rhythm(&ctx);
+        assert!(d.is_empty(), "expected cadential long-note exception, got: {:?}", d);
+    }
+
+    #[test]
+    fn sp3_rhythm_allows_terminal_note_count_variation() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 480, false, false),
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (67, 960, false, false),
+                (69, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        let d = r_sp3_rhythm(&ctx);
+        assert!(d.is_empty(), "expected terminal rhythm variation allowance, got: {:?}", d);
+    }
+
+    #[test]
+    fn parallel_perfects_are_time_aligned_not_index_aligned() {
+        let score = NormalizedScore {
+            meta: ScoreMeta {
+                exercise_count: 1,
+                key_signature: KeySignature {
+                    tonic_pc: 0,
+                    mode: ScaleMode::Major,
+                },
+                time_signature: TimeSignature {
+                    numerator: 4,
+                    denominator: 4,
+                },
+                ticks_per_quarter: 480,
+            },
+            voices: vec![
+                Voice {
+                    voice_index: 0,
+                    name: "upper".to_string(),
+                    notes: vec![
+                        NoteEvent {
+                            note_id: "u0".to_string(),
+                            voice_index: 0,
+                            midi: 60,
+                            start_tick: 0,
+                            duration_ticks: 480,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                        NoteEvent {
+                            note_id: "u1".to_string(),
+                            voice_index: 0,
+                            midi: 62,
+                            start_tick: 480,
+                            duration_ticks: 480,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                        NoteEvent {
+                            note_id: "u2".to_string(),
+                            voice_index: 0,
+                            midi: 64,
+                            start_tick: 960,
+                            duration_ticks: 480,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                    ],
+                },
+                Voice {
+                    voice_index: 1,
+                    name: "lower".to_string(),
+                    notes: vec![
+                        NoteEvent {
+                            note_id: "l0".to_string(),
+                            voice_index: 1,
+                            midi: 53,
+                            start_tick: 0,
+                            duration_ticks: 960,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                        NoteEvent {
+                            note_id: "l1".to_string(),
+                            voice_index: 1,
+                            midi: 55,
+                            start_tick: 960,
+                            duration_ticks: 960,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                    ],
+                },
+            ],
+        };
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let d = r_parallel_perfects(&ctx);
+        assert!(d.is_empty());
+    }
+
+    #[test]
+    fn direct_perfects_are_time_aligned_not_index_aligned() {
+        let score = NormalizedScore {
+            meta: ScoreMeta {
+                exercise_count: 1,
+                key_signature: KeySignature {
+                    tonic_pc: 0,
+                    mode: ScaleMode::Major,
+                },
+                time_signature: TimeSignature {
+                    numerator: 4,
+                    denominator: 4,
+                },
+                ticks_per_quarter: 480,
+            },
+            voices: vec![
+                Voice {
+                    voice_index: 0,
+                    name: "upper".to_string(),
+                    notes: vec![
+                        NoteEvent {
+                            note_id: "u0".to_string(),
+                            voice_index: 0,
+                            midi: 60,
+                            start_tick: 0,
+                            duration_ticks: 480,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                        NoteEvent {
+                            note_id: "u1".to_string(),
+                            voice_index: 0,
+                            midi: 64,
+                            start_tick: 480,
+                            duration_ticks: 480,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                        NoteEvent {
+                            note_id: "u2".to_string(),
+                            voice_index: 0,
+                            midi: 65,
+                            start_tick: 960,
+                            duration_ticks: 480,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                    ],
+                },
+                Voice {
+                    voice_index: 1,
+                    name: "lower".to_string(),
+                    notes: vec![
+                        NoteEvent {
+                            note_id: "l0".to_string(),
+                            voice_index: 1,
+                            midi: 53,
+                            start_tick: 0,
+                            duration_ticks: 960,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                        NoteEvent {
+                            note_id: "l1".to_string(),
+                            voice_index: 1,
+                            midi: 55,
+                            start_tick: 960,
+                            duration_ticks: 960,
+                            tie_start: false,
+                            tie_end: false,
+                        },
+                    ],
+                },
+            ],
+        };
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let d = r_direct_perfects(&ctx);
+        assert!(d.is_empty());
+    }
+
+    #[test]
+    fn parallel_perfects_detected_on_aligned_similar_motion() {
+        let score = mk_score();
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let d = r_parallel_perfects(&ctx);
+        assert_eq!(d.len(), 1);
+    }
+
+    #[test]
+    fn consecutive_parallel_imperfects_limit_enforced() {
+        let score = mk_two_voice_score(
+            &[
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (67, 480, false, false),
+                (69, 480, false, false),
+                (71, 480, false, false),
+            ],
+            &[
+                (60, 480, false, false),
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (67, 480, false, false),
+            ],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let d = r_consecutive_parallel_imperfects(&ctx);
+        assert_eq!(d.len(), 1);
+        assert_eq!(
+            d[0].rule_id,
+            "gen.motion.consecutive_parallel_imperfects_limited"
+        );
+    }
+
+    #[test]
+    fn consecutive_parallel_imperfects_allows_three() {
+        let score = mk_two_voice_score(
+            &[
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (67, 480, false, false),
+            ],
+            &[
+                (60, 480, false, false),
+                (62, 480, false, false),
+                (64, 480, false, false),
+            ],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let d = r_consecutive_parallel_imperfects(&ctx);
+        assert!(d.is_empty());
+    }
+
+    #[test]
+    fn consecutive_parallel_imperfects_reset_by_species2_weak_beat_events() {
+        let score = mk_two_voice_score(
+            &[
+                (64, 960, false, false),
+                (65, 960, false, false),
+                (65, 960, false, false),
+                (67, 960, false, false),
+                (67, 960, false, false),
+                (69, 960, false, false),
+                (69, 960, false, false),
+                (71, 960, false, false),
+                (71, 960, false, false),
+                (72, 960, false, false),
+            ],
+            &[
+                (60, 1920, false, false),
+                (62, 1920, false, false),
+                (64, 1920, false, false),
+                (65, 1920, false, false),
+                (67, 1920, false, false),
+            ],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let d = r_consecutive_parallel_imperfects(&ctx);
+        assert!(d.is_empty());
+    }
+
+    #[test]
+    fn sp2_allows_consonant_weak_beat_leaps() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (65, 960, false, false),
+                (62, 960, false, false),
+                (64, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        assert!(r_sp2_weak_passing(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp2_rejects_dissonant_weak_beat_leap() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (66, 960, false, false),
+                (64, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (53, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let out = r_sp2_weak_passing(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp2.dissonance.weak_passing_stepwise");
+    }
+
+    #[test]
+    fn sp2_requires_dissonant_passing_between_consonances() {
+        let score = mk_two_voice_score(
+            &[
+                (58, 960, false, false),
+                (59, 960, false, false),
+                (60, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (53, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let out = r_sp2_weak_passing(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp2.dissonance.weak_passing_stepwise");
+    }
+
+    #[test]
+    fn sp2_downbeat_unison_ignores_terminal_downbeat_unison() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 960, false, false),
+                (64, 960, false, false),
+                (69, 1920, false, false),
+            ],
+            &[(53, 1920, false, false), (69, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let out = r_sp2_downbeat_unison(&ctx);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn sp2_downbeat_unison_flags_interior_downbeat() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (62, 960, false, false),
+                (62, 960, false, false),
+                (64, 960, false, false),
+                (64, 960, false, false),
+                (65, 960, false, false),
+            ],
+            &[
+                (60, 1920, false, false),
+                (62, 1920, false, false),
+                (64, 1920, false, false),
+            ],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let out = r_sp2_downbeat_unison(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp2.downbeat_unison_discouraged");
+        assert_eq!(out[0].primary.tick, 1920);
+    }
+
+    #[test]
+    fn species1_repeated_pitch_is_forbidden() {
+        let score = mk_two_voice_score(
+            &[(60, 1920, false, false), (60, 1920, false, false)],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let out = r_melodic_repeated_pitch_species_profiled(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "gen.melody.repeated_pitch_species_profiled");
+        assert_eq!(out[0].severity, Severity::Error);
+    }
+
+    #[test]
+    fn species2_repeated_pitch_is_discouraged() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (60, 960, false, false),
+                (62, 960, false, false),
+                (64, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let out = r_melodic_repeated_pitch_species_profiled(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "gen.melody.repeated_pitch_species_profiled");
+        assert_eq!(out[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn species4_allows_tie_linked_repeat() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 960, false, false),
+                (60, 960, true, false),
+                (60, 960, false, true),
+                (59, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        let out = r_melodic_repeated_pitch_species_profiled(&ctx);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn species4_flags_non_tied_repeat() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 960, false, false),
+                (60, 960, false, false),
+                (60, 960, false, false),
+                (59, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        let out = r_melodic_repeated_pitch_species_profiled(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "gen.melody.repeated_pitch_species_profiled");
+        assert_eq!(out[0].severity, Severity::Error);
+    }
+
+    #[test]
+    fn species5_non_tied_repeat_is_discouraged() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 960, false, false),
+                (60, 960, false, false),
+                (60, 960, false, false),
+                (59, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species5,
+            rule_params: &params,
+        };
+        let out = r_melodic_repeated_pitch_species_profiled(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "gen.melody.repeated_pitch_species_profiled");
+        assert_eq!(out[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn opening_by_position_requires_tonic_when_cp_below() {
+        let score = mk_two_voice_score(
+            &[(55, 1920, false, false), (57, 1920, false, false)],
+            &[(60, 1920, false, false), (62, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let out = r_opening_interval_by_position(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].rule_id,
+            "gen.opening.interval_by_position_species_profiled"
+        );
+    }
+
+    #[test]
+    fn opening_by_position_allows_dominant_when_cp_above() {
+        let score = mk_two_voice_score(
+            &[(67, 1920, false, false), (69, 1920, false, false)],
+            &[(60, 1920, false, false), (62, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let out = r_opening_interval_by_position(&ctx);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn clausula_vera_valid_formula_passes() {
+        let score = mk_two_voice_score(
+            &[(71, 1920, false, false), (72, 1920, false, false)],
+            &[(62, 1920, false, false), (60, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        assert!(r_clausula_vera(&ctx).is_empty());
+    }
+
+    #[test]
+    fn clausula_vera_invalid_formula_fails() {
+        let score = mk_two_voice_score(
+            &[(69, 1920, false, false), (72, 1920, false, false)],
+            &[(62, 1920, false, false), (60, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let out = r_clausula_vera(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "gen.cadence.clausula_vera_required");
+    }
+
+    #[test]
+    fn two_voice_max_distance_flags_twelth_excess() {
+        let score = mk_two_voice_score(
+            &[(80, 1920, false, false)],
+            &[(60, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let out = r_two_voice_max_distance(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "gen.spacing.two_voice_max_distance");
+        assert_eq!(out[0].severity, Severity::Error);
+    }
+
+    #[test]
+    fn two_voice_max_distance_allows_octave() {
+        let score = mk_two_voice_score(
+            &[(72, 1920, false, false)],
+            &[(60, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let out = r_two_voice_max_distance(&ctx);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn two_voice_max_distance_warns_when_exceeding_tenth() {
+        let score = mk_two_voice_score(
+            &[(77, 1920, false, false)],
+            &[(60, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let out = r_two_voice_max_distance(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "gen.spacing.two_voice_max_distance");
+        assert_eq!(out[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn single_climax_ignores_tied_peak_continuation() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (67, 960, true, false),
+                (67, 960, false, true),
+                (65, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        assert!(r_single_climax(&ctx).is_empty());
+    }
+
+    #[test]
+    fn climax_non_coincident_warns_on_shared_peak_tick() {
+        let score = mk_two_voice_score(
+            &[(60, 1920, false, false), (72, 1920, false, false)],
+            &[(53, 1920, false, false), (65, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species1,
+            rule_params: &params,
+        };
+        let out = r_climax_non_coincident(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].rule_id,
+            "gen.melody.climax_non_coincident_between_voices"
+        );
+    }
+
+    #[test]
+    fn sp2_downbeat_interval_repetition_flags_consecutive_perfects() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (62, 960, false, false),
+                (62, 960, false, false),
+                (64, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let out = r_sp2_downbeat_interval_repetition(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].rule_id,
+            "sp2.structure.downbeat_interval_repetition_limits"
+        );
+    }
+
+    #[test]
+    fn sp2_consonant_pattern_catalog_flags_unknown_shape() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (68, 960, false, false),
+                (63, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species2,
+            rule_params: &params,
+        };
+        let out = r_sp2_weak_consonant_pattern_catalog(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp2.weak_beat.consonant_pattern_catalog");
+    }
+
+    #[test]
+    fn sp3_downbeat_interval_repetition_flags_three_perfects() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 480, false, false),
+                (61, 480, false, false),
+                (62, 480, false, false),
+                (63, 480, false, false),
+                (62, 480, false, false),
+                (63, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (66, 480, false, false),
+                (67, 480, false, false),
+            ],
+            &[
+                (53, 1920, false, false),
+                (55, 1920, false, false),
+                (57, 1920, false, false),
+            ],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        let out = r_sp3_downbeat_interval_repetition(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].rule_id,
+            "sp3.structure.downbeat_interval_repetition_limits"
+        );
+    }
+
+    #[test]
+    fn sp3_perfect_interval_proximity_guard_flags_prior_same_perfect() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 480, false, false),
+                (61, 480, false, false),
+                (62, 480, false, false),
+                (60, 480, false, false),
+                (62, 480, false, false),
+                (63, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        let out = r_sp3_perfect_interval_proximity_guard(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp3.perfect_interval_proximity_guard");
+    }
+
+    #[test]
+    fn sp4_strict_entry_exit_profile_flags_missing_half_rest() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 960, false, false),
+                (60, 960, true, false),
+                (60, 960, false, true),
+                (59, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        let out = r_sp4_strict_entry_exit_profile(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp4.form.strict_entry_exit_profile");
+    }
+
+    #[test]
+    fn sp4_break_species_budget_warns_when_overused() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (62, 960, false, false),
+                (64, 960, false, false),
+                (65, 960, false, false),
+                (67, 960, false, false),
+                (69, 960, false, false),
+                (67, 960, false, false),
+                (65, 960, false, false),
+                (64, 960, false, false),
+                (62, 960, false, false),
+            ],
+            &[
+                (53, 1920, false, false),
+                (55, 1920, false, false),
+                (57, 1920, false, false),
+                (55, 1920, false, false),
+                (53, 1920, false, false),
+            ],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        let out = r_sp4_break_species(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp4.form.break_species_budget");
+    }
+
+    #[test]
+    fn sp4_suspension_density_warns_when_too_low() {
+        let score = mk_two_voice_score(
+            &[
+                (64, 960, false, false),
+                (62, 960, true, false),
+                (62, 960, false, true),
+                (60, 960, true, false),
+                (60, 960, false, true),
+                (59, 960, false, false),
+            ],
+            &[
+                (53, 1920, false, false),
+                (55, 1920, false, false),
+                (57, 1920, false, false),
+            ],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        let out = r_sp4_suspension_density_minimum(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp4.suspension_density_minimum");
+    }
+
+    #[test]
+    fn sp3_allows_dissonant_passing() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (69, 480, false, false),
+            ],
+            &[(53, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        assert!(r_sp3_patterns(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp3_allows_dissonant_neighbor() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (62, 480, false, false),
+                (60, 480, false, false),
+            ],
+            &[(53, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        assert!(r_sp3_patterns(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp3_allows_canonical_double_neighbor() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (61, 480, false, false),
+                (62, 480, false, false),
+            ],
+            &[(53, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        assert!(r_sp3_patterns(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp3_allows_cambiata_exception() {
+        let score = mk_two_voice_score(
+            &[
+                (65, 480, false, false),
+                (64, 480, false, false),
+                (60, 480, false, false),
+                (62, 480, false, false),
+                (64, 480, false, false),
+            ],
+            &[(53, 1920, false, false), (53, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        assert!(r_sp3_cambiata(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp3_downbeat_unison_allows_first_and_last_only() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 480, false, false),
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (67, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (67, 480, false, false),
+                (69, 480, false, false),
+            ],
+            &[
+                (60, 1920, false, false),
+                (62, 1920, false, false),
+                (64, 1920, false, false),
+            ],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        let out = r_sp3_downbeat_unison(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp3.downbeat_unison_forbidden");
+        assert_eq!(out[0].primary.tick, 1920);
+    }
+
+    #[test]
+    fn sp3_downbeat_unison_ignores_terminal_downbeat_unison() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (65, 480, false, false),
+                (67, 480, false, false),
+                (69, 1920, false, false),
+            ],
+            &[(53, 1920, false, false), (69, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        let out = r_sp3_downbeat_unison(&ctx);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn sp3_warns_when_leap_from_dissonance_is_not_cambiata() {
+        let score = mk_two_voice_score(
+            &[
+                (65, 480, false, false),
+                (64, 480, false, false),
+                (61, 480, false, false),
+                (60, 480, false, false),
+                (59, 480, false, false),
+            ],
+            &[(53, 1920, false, false), (53, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species3,
+            rule_params: &params,
+        };
+        let out = r_sp3_cambiata(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp3.dissonance.cambiata_limited_exception");
+    }
+
+    #[test]
+    fn sp5_allows_escape_like_weak_dissonance() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (60, 480, false, false),
+                (62, 480, false, false),
+            ],
+            &[(53, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species5,
+            rule_params: &params,
+        };
+        assert!(r_sp5_dissonance_patterns(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp5_rejects_unlicensed_weak_dissonance_motion() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 480, false, false),
+                (64, 480, false, false),
+                (67, 480, false, false),
+                (69, 480, false, false),
+            ],
+            &[(53, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species5,
+            rule_params: &params,
+        };
+        let out = r_sp5_dissonance_patterns(&ctx);
+        assert!(!out.is_empty());
+        assert!(out
+            .iter()
+            .all(|d| d.rule_id == "sp5.dissonance.licensed_patterns_only"));
+    }
+
+    #[test]
+    fn sp5_rejects_downbeat_dissonance_without_suspension() {
+        let score = mk_two_voice_score(
+            &[(64, 1920, false, false), (65, 1920, false, false)],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species5,
+            rule_params: &params,
+        };
+        let out = r_sp5_strong(&ctx);
+        assert!(!out.is_empty());
+        assert_eq!(
+            out[0].rule_id,
+            "sp5.strong_beat.consonance_or_prepared_suspension_only"
+        );
+    }
+
+    #[test]
+    fn sp4_allows_consonant_tie_without_false_class_or_resolution_error() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (62, 960, true, false),
+                (62, 960, false, true),
+                (64, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        assert!(r_sp4_allowed_classes(&ctx).is_empty());
+        assert!(r_sp4_step_resolution(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp4_rejects_disallowed_suspension_class() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (61, 960, true, false),
+                (61, 960, false, true),
+                (60, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        let out = r_sp4_allowed_classes(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp4.allowed_suspension_classes_enforced");
+    }
+
+    #[test]
+    fn sp4_accepts_43_suspension_with_step_resolution() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 960, false, false),
+                (60, 960, true, false),
+                (60, 960, false, true),
+                (59, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        assert!(r_sp4_allowed_classes(&ctx).is_empty());
+        assert!(r_sp4_step_resolution(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp4_accepts_76_suspension_with_step_resolution() {
+        let score = mk_two_voice_score(
+            &[
+                (67, 960, false, false),
+                (65, 960, true, false),
+                (65, 960, false, true),
+                (64, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        assert!(r_sp4_allowed_classes(&ctx).is_empty());
+        assert!(r_sp4_step_resolution(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp4_accepts_98_suspension_with_step_resolution() {
+        let score = mk_two_voice_score(
+            &[
+                (59, 960, false, false),
+                (57, 960, true, false),
+                (57, 960, false, true),
+                (55, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        assert!(r_sp4_allowed_classes(&ctx).is_empty());
+        assert!(r_sp4_step_resolution(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp4_prep_uses_preparation_beat_consonance() {
+        let score = mk_two_voice_score(
+            &[
+                (64, 960, false, false),
+                (67, 960, true, false),
+                (67, 960, false, true),
+                (65, 960, false, false),
+            ],
+            &[(60, 1920, false, false), (62, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        assert!(r_sp4_prep(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp4_accepts_23_suspension_below_cf() {
+        let score = mk_two_voice_score(
+            &[
+                (60, 960, false, false),
+                (58, 960, true, false),
+                (58, 960, false, true),
+                (57, 960, false, false),
+            ],
+            &[(62, 1920, false, false), (60, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        assert!(r_sp4_allowed_classes(&ctx).is_empty());
+        assert!(r_sp4_step_resolution(&ctx).is_empty());
+    }
+
+    #[test]
+    fn sp4_rejects_non_downward_resolution_for_dissonant_suspension() {
+        let score = mk_two_voice_score(
+            &[
+                (62, 960, false, false),
+                (60, 960, true, false),
+                (60, 960, false, true),
+                (62, 960, false, false),
+            ],
+            &[(53, 1920, false, false), (55, 1920, false, false)],
+            4,
+            4,
+        );
+        let params = BTreeMap::new();
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::Species4,
+            rule_params: &params,
+        };
+        let out = r_sp4_step_resolution(&ctx);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "sp4.suspension.step_resolution_required");
     }
 
     #[test]

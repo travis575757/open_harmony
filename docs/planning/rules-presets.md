@@ -14,6 +14,14 @@ Machine-readable source of truth: `docs/planning/rules-presets.json`.
 - `general_voice_leading`
 - `custom`
 
+## Mode Guide Docs
+- `docs/planning/rules-modes/species1.md`
+- `docs/planning/rules-modes/species2.md`
+- `docs/planning/rules-modes/species3.md`
+- `docs/planning/rules-modes/species4.md`
+- `docs/planning/rules-modes/species5.md`
+- `docs/planning/rules-modes/general_voice_leading.md`
+
 ## Mapping Policy
 - Species presets are strict-species presets.
 - Each species preset includes:

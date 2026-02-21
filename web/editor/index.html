@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open Harmony Editor</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/abcjs@6.2.2/abcjs-audio.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>Counterpoint Editor</h1>
+
+      <section>
+        <h2>Session</h2>
+        <label for="preset-select">Preset</label>
+        <select id="preset-select"></select>
+
+        <label for="custom-base-select">Custom Base Preset</label>
+        <select id="custom-base-select"></select>
+
+        <label for="voice-count">Voice Count</label>
+        <select id="voice-count">
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+
+        <div class="grid-2">
+          <div>
+            <label for="key-tonic">Key Tonic</label>
+            <select id="key-tonic"></select>
+          </div>
+          <div>
+            <label for="mode-select">Mode</label>
+            <select id="mode-select">
+              <option value="major" selected>Major</option>
+              <option value="minor">Minor</option>
+              <option value="dorian">Dorian</option>
+              <option value="phrygian">Phrygian</option>
+              <option value="lydian">Lydian</option>
+              <option value="mixolydian">Mixolydian</option>
+              <option value="aeolian">Aeolian</option>
+              <option value="ionian">Ionian</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="time-signature-select">Time Signature</label>
+        <select id="time-signature-select"></select>
+
+        <div class="btn-row" style="margin-top:8px;">
+          <button id="add-measure" type="button">Add Measure</button>
+          <button id="remove-measure" type="button">Remove Measure</button>
+        </div>
+
+        <label for="zoom-scale">Score Zoom</label>
+        <input id="zoom-scale" type="range" min="50" max="180" value="100" step="5">
+        <div id="zoom-label" class="subtle">100%</div>
+
+        <label class="toggle-row">
+          <input id="bar-number-toggle" type="checkbox">
+          <span>Show Bar Numbers</span>
+        </label>
+
+        <label class="toggle-row">
+          <input id="roman-toggle" type="checkbox">
+          <span>Show Roman Numerals</span>
+        </label>
+      </section>
+
+      <section>
+        <h2>Cantus</h2>
+        <label for="cantus-select">Fux Cantus</label>
+        <select id="cantus-select"></select>
+
+        <label for="cantus-target-voice">Apply To Voice</label>
+        <select id="cantus-target-voice"></select>
+
+        <label class="toggle-row">
+          <input id="cantus-lock-toggle" type="checkbox" checked>
+          <span>Lock Cantus Voice After Apply</span>
+        </label>
+        <div id="cantus-lock-status" class="subtle"></div>
+
+        <button id="apply-cantus" type="button">Apply Built-in Cantus</button>
+
+        <label for="custom-cantus">Custom Cantus (ABC tokens, defaults to whole notes)</label>
+        <textarea id="custom-cantus" rows="3" placeholder="D E F G A"></textarea>
+        <button id="apply-custom-cantus" type="button">Apply Custom Cantus</button>
+      </section>
+
+      <section>
+        <h2>Rule Controls</h2>
+        <label for="rule-filter">Filter Rules</label>
+        <input id="rule-filter" type="text" placeholder="Type to filter by rule id or group">
+        <div id="rule-summary" class="subtle"></div>
+        <div id="rule-list" class="rule-list"></div>
+      </section>
+
+      <section>
+        <h2>Custom Profiles</h2>
+        <label for="custom-profile-name">Profile Name</label>
+        <input id="custom-profile-name" type="text" placeholder="My species 3 practice set">
+        <button id="save-profile" type="button">Save Profile</button>
+        <label for="saved-profiles">Saved Profiles</label>
+        <select id="saved-profiles"></select>
+        <div class="btn-row">
+          <button id="load-profile" type="button">Load</button>
+          <button id="delete-profile" type="button">Delete</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>MusicXML</h2>
+        <input id="musicxml-file" type="file" accept=".xml,.musicxml,text/xml,application/xml">
+        <div class="btn-row">
+          <button id="import-musicxml" type="button">Import</button>
+          <button id="export-musicxml" type="button">Export</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Engine</h2>
+        <div id="engine-status" class="subtle">Initializing analyzer...</div>
+        <ul id="warning-list" class="warning-list"></ul>
+      </section>
+    </aside>
+
+    <main class="content">
+      <section class="card">
+        <h2>Score</h2>
+        <div class="score-toolbar">
+          <select id="insert-duration">
+            <option value="8">Whole (8)</option>
+            <option value="4">Half (4)</option>
+            <option value="2" selected>Quarter (2)</option>
+            <option value="1">Eighth (1)</option>
+          </select>
+          <button id="insert-note-before" type="button">Insert Note Before</button>
+          <button id="insert-note-after" type="button">Insert Note After</button>
+          <button id="insert-rest-before" type="button">Insert Rest Before</button>
+          <button id="insert-rest-after" type="button">Insert Rest After</button>
+          <button id="delete-selected-note" type="button">Delete Selected</button>
+        </div>
+        <div class="subtle">Shortcuts: Ctrl/Cmd+C copy, Ctrl/Cmd+X cut, Ctrl/Cmd+V paste (selected note).</div>
+        <div id="paper"></div>
+        <div id="abc-audio" class="abc-audio"></div>
+      </section>
+
+      <section class="card">
+        <h2>Voice Editors (ABC tokens)</h2>
+        <div class="subtle">Duration is required/visible as eighth-note units: `C8` (whole), `C4` (half), `C2` (quarter), `C1` (eighth). Use `z4` for a rest.</div>
+        <div id="voice-editors"></div>
+        <div id="parse-errors" class="error-block"></div>
+      </section>
+
+      <section class="card">
+        <h2>Diagnostics</h2>
+        <div id="diagnostics-summary" class="subtle"></div>
+        <ul id="diagnostics-list" class="diagnostics-list"></ul>
+      </section>
+
+      <section class="card" id="harmony-card" hidden>
+        <h2>Harmonic Slices</h2>
+        <ul id="harmony-list" class="harmony-list"></ul>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

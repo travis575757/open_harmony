@@ -1,6 +1,6 @@
 use cp_core::{
-    validate_score, AnalysisDiagnostic, AnalysisRequest, AnalysisResponse, AnalysisSummary, CoreError,
-    PresetId, RuleId, Severity,
+    validate_score, AnalysisDiagnostic, AnalysisRequest, AnalysisResponse, AnalysisSummary,
+    CoreError, PresetId, RuleId, Severity,
 };
 use cp_harmony::analyze_harmony;
 use cp_rules::{rule_registry, validate_rule_params, RuleContext, RuleParamIssue};
@@ -222,8 +222,8 @@ pub fn analyze(req: &AnalysisRequest) -> EngineResult<AnalysisResponse> {
 mod tests {
     use super::*;
     use cp_core::{
-        AnalysisConfig, AnalysisRequest, KeySignature, NormalizedScore, NoteEvent, PresetId,
-        ScaleMode, ScoreMeta, TimeSignature, Voice,
+        AnalysisConfig, AnalysisRequest, HarmonicRhythm, KeySignature, NormalizedScore, NoteEvent,
+        PresetId, ScaleMode, ScoreMeta, TimeSignature, Voice,
     };
 
     fn base_score() -> NormalizedScore {
@@ -303,6 +303,7 @@ mod tests {
                 disabled_rule_ids: vec![],
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
+                harmonic_rhythm: HarmonicRhythm::NoteOnset,
             },
         };
         let p = resolve_preset(&req).expect("resolve");
@@ -323,6 +324,7 @@ mod tests {
                 disabled_rule_ids: vec![],
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
+                harmonic_rhythm: HarmonicRhythm::NoteOnset,
             },
         };
         let res = analyze(&req).expect("analyze");
@@ -342,6 +344,7 @@ mod tests {
                 disabled_rule_ids: vec![],
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
+                harmonic_rhythm: HarmonicRhythm::NoteOnset,
             },
         };
         let res = analyze(&req).expect("analyze");
@@ -358,6 +361,7 @@ mod tests {
                 disabled_rule_ids: vec![],
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
+                harmonic_rhythm: HarmonicRhythm::NoteOnset,
             },
         };
         let p = resolve_preset(&req).expect("resolve");
@@ -377,6 +381,7 @@ mod tests {
                 disabled_rule_ids: vec![],
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
+                harmonic_rhythm: HarmonicRhythm::NoteOnset,
             },
         };
         let res = analyze(&req).expect("analyze");
@@ -396,6 +401,7 @@ mod tests {
                 disabled_rule_ids: vec![],
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
+                harmonic_rhythm: HarmonicRhythm::NoteOnset,
             },
         };
         let p = resolve_preset(&req).expect("resolve");
@@ -422,6 +428,7 @@ mod tests {
                 disabled_rule_ids: vec![],
                 severity_overrides: BTreeMap::new(),
                 rule_params: params,
+                harmonic_rhythm: HarmonicRhythm::NoteOnset,
             },
         };
         let err = analyze(&req).expect_err("must fail");
