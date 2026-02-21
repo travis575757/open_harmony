@@ -1,0 +1,136 @@
+rule_id,source_file,source_type,locator,authority,notes
+gen.input.single_exercise_per_file,docs/demos/AiHarmony/md/cp_analyse.md,md,section:Uploading,primary,One exercise per file guidance
+gen.input.key_signature_required_and_stable,docs/demos/AiHarmony/md/cp_analyse.md,md,section:Uploading,primary,Key before exercise and unchanged
+gen.input.timesig_supported,docs/demos/AiHarmony/md/cp_analyse.md,md,lines:16-18,primary,Supported time signatures list
+gen.input.species_supported,docs/demos/AiHarmony/md/cp_analyse.md,md,line:16,primary,Species 1-5 supported
+gen.input.voice_count_supported,docs/demos/AiHarmony/md/cp_analyse.md,md,line:15,primary,Supports 1-9 voices
+gen.input_min_note_length.eighth_or_longer,docs/demos/AiHarmony/md/cp_analyse.md,md,line:21,primary,No notes shorter than 1/8
+gen.harmony.supported_sonorities,docs/demos/AiHarmony/md/cp_analyse.md,md,line:20,primary,Triads and 7th chords
+gen.motion.parallel_perfects_forbidden,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:42,primary,Consecutive 5ths or 8ves
+gen.motion.direct_perfects_restricted,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:44|45,primary,Similar motion to 5th/8ve
+gen.spacing.upper_adjacent_max_octave,docs/research/cp_gpt.md,md,lines:304|312,secondary,SATB spacing guidance
+gen.spacing.tenor_bass_max_twelfth,docs/research/cp_gpt.md,md,lines:304|312,secondary,SATB spacing guidance
+gen.voice_crossing_and_overlap.restricted,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:50|51,primary,Voice crossing and arrangement
+gen.unison.interior_restricted,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:53,primary,Unison rule paragraph
+gen.melody.max_leap_octave,docs/demos/cp_demo.html,html,lines:246-250,secondary,Prototype first-species check
+gen.melody.dissonant_leaps_forbidden,docs/demos/cp_demo.html,html,lines:250-253,secondary,Prototype first-species check
+gen.melody.post_leap_compensation_required,docs/research/cp_gpt.md,md,line:48,secondary,Leap compensation description
+gen.cadence.final_perfect_consonance_required,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:19,primary,Last measure constraints
+sp1.rhythm.one_to_one_only,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:17,primary,Rhythmic limitations by species
+sp1.vertical.consonance_only,docs/research/cp_gpt.md,md,lines:35|42|75,secondary,Species 1 strict consonance
+sp1.opening.perfect_consonance_required,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:18,primary,First measure constraints
+sp1.ending.unison_or_octave_required,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:19,primary,Last measure constraints
+sp2.rhythm.two_to_one_only,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:17,primary,Rhythmic limitations by species
+sp2.strong_beat.consonance_required,docs/research/cp_gpt.md,md,line:98,secondary,Downbeat consonance
+sp2.dissonance.weak_passing_stepwise,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:66,primary,Passing and neighbor tones
+sp2.structure.downbeat_skeleton_no_parallel_perfects,docs/research/cp_gpt.md,md,line:102,secondary,Downbeat skeleton
+sp3.rhythm.four_to_one_only,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:17,primary,Rhythmic limitations by species
+sp3.strong_beat.consonance_required,docs/research/cp_gpt.md,md,lines:143|149,secondary,Species 3 accent hierarchy
+sp3.dissonance.passing_neighbor_patterns_only,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:66,primary,Pattern-licensed dissonance
+sp3.dissonance.double_neighbor_allowed_pattern,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:68,primary,Double neighbor paragraph
+sp3.dissonance.cambiata_limited_exception,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:69,primary,Cambiata paragraph
+sp4.rhythm.syncopated_ligature_profile,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:17,primary,Rhythmic limitations by species
+sp4.suspension.preparation_required,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:63,primary,Suspension preparation
+sp4.suspension.downbeat_dissonance_allowed_only_if_suspension,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:61|62,primary,Suspensions
+sp4.suspension.step_resolution_required,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:64|65,primary,Suspension resolution
+sp4.break_species.allowed_when_no_ligature_possible,docs/research/cp_gpt.md,md,line:197,secondary,Break-species allowance
+sp5.rhythm.mixed_species_profile,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:13|20,primary,Mixed species paragraphs
+sp5.strong_beat.consonance_or_prepared_suspension_only,docs/research/cp_gpt.md,md,line:237,secondary,Structural beat logic
+sp5.eighth_notes.weak_position_pairs_only,docs/research/cp_gpt.md,md,line:239,secondary,Strict florid rhythm guidance
+sp5.dissonance.licensed_patterns_only,docs/demos/AiHarmony/js/data/rules_paragraphs.js,js,paragraph:66|68|69|70|71,primary,NCT pattern paragraphs
+sp5.cadence.strict_closure_required,docs/research/cp_gpt.md,md,line:259,secondary,Strict cadence checkpoint
+aih.paragraph.1.counterpoint,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:3 para:1,primary,Paragraph anchor: Counterpoint
+aih.paragraph.2.strict_counterpoint,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:3 para:2,primary,Paragraph anchor: Strict counterpoint
+aih.paragraph.3.cantus_firmus,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:3 para:3,primary,Paragraph anchor: Cantus firmus
+aih.paragraph.4.modes,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:4 para:4,primary,Paragraph anchor: Modes
+aih.paragraph.5.main_principles_of_combining_the_voices,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:4 para:5,primary,Paragraph anchor: Main principles of combining the voices
+aih.paragraph.6.chord_and_non_chord_tones,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:5 para:6,primary,Paragraph anchor: Chord and non-chord tones
+aih.paragraph.7.harmonic_intervals,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:7 para:7,primary,Paragraph anchor: Harmonic intervals
+aih.paragraph.8.chords,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:7 para:8,primary,Paragraph anchor: Chords
+aih.paragraph.9.non_harmonic_tones,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:7 para:9,primary,Paragraph anchor: Non-harmonic tones
+aih.paragraph.10.number_of_voices,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:9 para:10,primary,Paragraph anchor: Number of voices
+aih.paragraph.11.vocal_ranges,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:9 para:11,primary,Paragraph anchor: Vocal ranges
+aih.paragraph.12.counterpoint_species,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:9 para:12,primary,Paragraph anchor: Counterpoint species
+aih.paragraph.13.mixed_species,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:10 para:13,primary,Paragraph anchor: Mixed species
+aih.paragraph.14.voice_order,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:10 para:14,primary,Paragraph anchor: Voice order
+aih.paragraph.15.general_counterpoint_principles,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:10 para:15,primary,Paragraph anchor: General counterpoint principles
+aih.paragraph.16.time_signature,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:11 para:16,primary,Paragraph anchor: Time signature
+aih.paragraph.17.rhythmic_limitations_of_each_counterpoint_species,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:12 para:17,primary,Paragraph anchor: Rhythmic limitations of each counterpoint species
+aih.paragraph.18.first_measure,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:14 para:18,primary,Paragraph anchor: First measure
+aih.paragraph.19.last_measure,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:15 para:19,primary,Paragraph anchor: Last measure
+aih.paragraph.20.mixed_species,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:15 para:20,primary,Paragraph anchor: Mixed species
+aih.paragraph.21.allowed_rhythms,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:17 para:21,primary,Paragraph anchor: Allowed rhythms
+aih.paragraph.22.first_measure,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:17 para:22,primary,Paragraph anchor: First measure
+aih.paragraph.23.rhythms_distribution,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:17 para:23,primary,Paragraph anchor: Rhythms distribution
+aih.paragraph.24.stepwise_movement,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:18 para:24,primary,Paragraph anchor: Stepwise movement
+aih.paragraph.25.leaps,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:19 para:25,primary,Paragraph anchor: Leaps
+aih.paragraph.26.leaps_between_measures,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:22 para:26,primary,Paragraph anchor: Leaps between measures
+aih.paragraph.27.melodic_intervals_between_two_consecutive_notes,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:23 para:27,primary,Paragraph anchor: Melodic intervals between two consecutive notes
+aih.paragraph.28.melodic_intervals_between_more_than_two_consecutive_notes,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:24 para:28,primary,Paragraph anchor: Melodic intervals between more than two consecutive notes
+aih.paragraph.29.obligatory_note_preparation,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:24 para:29,primary,Paragraph anchor: Obligatory note preparation
+aih.paragraph.30.obligatory_resolution_of_chord_tones,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:25 para:30,primary,Paragraph anchor: Obligatory resolution of chord tones
+aih.paragraph.31.notes_repeat,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:26 para:31,primary,Paragraph anchor: Notes repeat
+aih.paragraph.32.melody_organization,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:27 para:32,primary,Paragraph anchor: Melody organization
+aih.paragraph.33.two_forms_of_melodic_minor,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:28 para:33,primary,Paragraph anchor: Two forms of melodic minor
+aih.paragraph.34.use_of_non_chord_tones_vi_or_vii,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:28 para:34,primary,Paragraph anchor: Use of non-chord tones VI# or VII
+aih.paragraph.35.use_of_chord_tones_vi_or_vii,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:28 para:35,primary,Paragraph anchor: Use of chord tones VI# or VII
+aih.paragraph.36.close_positioning_of_two_forms_of_vi_or_vii_degree_in_melodic_minor,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:28 para:36,primary,Paragraph anchor: Close positioning of two forms of VI or VII degree in melodic minor
+aih.paragraph.37.contrary_motion_of_voices,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:30 para:37,primary,Paragraph anchor: Contrary motion of voices
+aih.paragraph.38.oblique_motion,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:30 para:38,primary,Paragraph anchor: Oblique motion
+aih.paragraph.39.similar_motion,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:30 para:39,primary,Paragraph anchor: Similar motion
+aih.paragraph.40.consecutive_3rds_4ths_and_6ths,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:32 para:40,primary,Paragraph anchor: Consecutive 3rds, 4ths and 6ths
+aih.paragraph.41.similar_motion_to_3rd_4th_or_6th,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:32 para:41,primary,Paragraph anchor: Similar motion to 3rd, 4th or 6th
+aih.paragraph.42.consecutive_5ths_or_8ves,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:33 para:42,primary,Paragraph anchor: Consecutive 5ths or 8ves
+aih.paragraph.43.5ths_or_8ves_separated_by_one_or_multiple_notes,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:34 para:43,primary,Paragraph anchor: 5ths or 8ves, separated by one or multiple notes
+aih.paragraph.44.similar_motion_to_5th_or_8ve_between_outer_voices,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:35 para:44,primary,Paragraph anchor: Similar motion to 5th or 8ve between outer voices
+aih.paragraph.45.similar_motion_to_5th_or_8ve_except_between_outer_voices,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:35 para:45,primary,Paragraph anchor: Similar motion to 5th or 8ve except between outer voices
+aih.paragraph.46.consecutive_2nds_7ths_9ths,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:37 para:46,primary,Paragraph anchor: Consecutive 2nds, 7ths, 9ths
+aih.paragraph.47.similar_motion_to_2nd_7th_and_9th,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:38 para:47,primary,Paragraph anchor: Similar motion to 2nd, 7th and 9th
+aih.paragraph.48.2nd_7th_or_9th_at_the_beginning_of_the_voice,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:39 para:48,primary,Paragraph anchor: 2nd, 7th or 9th at the beginning of the voice
+aih.paragraph.49.distance_between_voices,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:39 para:49,primary,Paragraph anchor: Distance between voices
+aih.paragraph.50.voice_crossing_and_overlapping,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:40 para:50,primary,Paragraph anchor: Voice crossing and overlapping
+aih.paragraph.51.voice_crossing_arrangement,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:40 para:51,primary,Paragraph anchor: Voice crossing arrangement
+aih.paragraph.52.doubling,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:42 para:52,primary,Paragraph anchor: Doubling
+aih.paragraph.53.unison,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:43 para:53,primary,Paragraph anchor: Unison
+aih.paragraph.54.harmonic_4th,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:44 para:54,primary,Paragraph anchor: Harmonic 4th
+aih.paragraph.55.harmonic_tritone,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:44 para:55,primary,Paragraph anchor: Harmonic tritone
+aih.paragraph.56.second_inversion_chords,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:46 para:56,primary,Paragraph anchor: Second inversion chords
+aih.paragraph.57.obligatory_harmonies,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:47 para:57,primary,Paragraph anchor: Obligatory harmonies
+aih.paragraph.58.incomplete_chords,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:49 para:58,primary,Paragraph anchor: Incomplete chords
+aih.paragraph.59.harmonic_rhythm,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:50 para:59,primary,Paragraph anchor: Harmonic rhythm
+aih.paragraph.60.modulation,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:50 para:60,primary,Paragraph anchor: Modulation
+aih.paragraph.61.suspensions_which_resolve_downwards,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:51 para:61,primary,Paragraph anchor: Suspensions, which resolve downwards
+aih.paragraph.62.suspensions_which_resolve_up,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:51 para:62,primary,Paragraph anchor: Suspensions, which resolve up
+aih.paragraph.63.suspension_preparation,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:52 para:63,primary,Paragraph anchor: Suspension preparation
+aih.paragraph.64.suspension_resolution,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:53 para:64,primary,Paragraph anchor: Suspension resolution
+aih.paragraph.65.suspension_and_suspension_resolution,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:55 para:65,primary,Paragraph anchor: Suspension and suspension resolution
+aih.paragraph.66.passing_and_neighbor_tones,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:57 para:66,primary,Paragraph anchor: Passing and neighbor tones
+aih.paragraph.67.simultaneous_sounding_of_melodic_and_harmonic_notes,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:57 para:67,primary,Paragraph anchor: Simultaneous sounding of melodic and harmonic notes
+aih.paragraph.68.double_neighbor_tones,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:58 para:68,primary,Paragraph anchor: Double neighbor tones
+aih.paragraph.69.cambiata,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:58 para:69,primary,Paragraph anchor: Cambiata
+aih.paragraph.70.passing_downbeat_dissonance,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:59 para:70,primary,Paragraph anchor: Passing downbeat dissonance
+aih.paragraph.71.combining_multiple_melodic_patterns,docs/demos/AiHarmony/md/pdf/Artinfuser_Counterpoint_rules.pdf,pdf,page:59 para:71,primary,Paragraph anchor: Combining multiple melodic patterns
+gen.interval.p4_dissonant_against_bass_in_two_voice,docs/research/cp_gemini.md,md,line:33,secondary,Two-voice P4 dissonance treatment
+gen.motion.contrary_and_oblique_preferred,docs/research/cp_gemini.md,md,lines:57|63,secondary,Motion preference rule
+gen.melody.single_climax_preferred,docs/research/cp_gemini.md,md,line:69,secondary,Single-climax contour guidance
+gen.melody.consecutive_large_leaps_restricted,docs/research/cp_gemini.md,md,line:71,secondary,Large leap chain restrictions
+gen.voice.leading_tone_not_doubled,docs/research/cp_gemini.md,md,line:247,secondary,Tonal tendency-tone doubling
+gen.voice.chordal_seventh_resolves_down,docs/research/cp_gemini.md,md,line:253,secondary,Seventh resolution
+gen.voice.leading_tone_resolves_up,docs/research/cp_gemini.md,md,line:253,secondary,Leading tone resolution
+gen.doubling.root_position_prefers_root,docs/research/cp_gemini.md,md,line:224,secondary,Root-position doubling guidance
+gen.doubling.first_inversion_no_bass_double_default,docs/research/cp_gemini.md,md,line:238,secondary,First inversion doubling default
+gen.doubling.diminished_first_inversion_double_third,docs/research/cp_gemini.md,md,line:238,secondary,Diminished first inversion exception
+gen.doubling.second_inversion_double_bass,docs/research/cp_gemini.md,md,line:244,secondary,Second inversion doubling
+gen.cadence.cadential_64_resolves_65_43,docs/research/cp_gpt.md,md,line:300,secondary,Cadential 6/4 resolution
+gen.nct.appoggiatura_escape_anticipation_pedal_retardation_supported,docs/research/cp_gpt.md,md,lines:327|334,secondary,Expanded NCT taxonomy
+sp1.cadence.penultimate_imperfect_consonance,docs/research/cp_gemini.md,md,line:90,secondary,Clausula penultimate behavior
+sp2.downbeat_unison_discouraged,docs/research/cp_gemini.md,md,line:111,secondary,Species 2 downbeat unison guidance
+sp3.downbeat_unison_forbidden,docs/research/cp_gemini.md,md,line:132,secondary,Species 3 beat-1 unison guidance
+sp4.allowed_suspension_classes_enforced,docs/research/cp_gpt.md,md,line:205,secondary,Suspension class set
+sp4.afterbeat_parallel_guard,docs/research/cp_gemini.md,md,line:165,secondary,After-beat parallel constraint
+sp4.all_voices_syncopation_avoidance,docs/research/cp_gpt.md,md,line:282,secondary,At least one voice articulates beat
+sp5.eighth_grouping_no_triplet_like_clusters,docs/research/cp_gemini.md,md,line:180,secondary,Eighth grouping strictness
+adv.invertible.octave_treat_fifth_as_sensitive,docs/research/cp_gemini.md,md,line:325,secondary,Invertible counterpoint at octave
+adv.invertible.octave_suspension_pair_76_23_preferred,docs/research/cp_gemini.md,md,line:325,secondary,Inversion-safe suspension pairs
+adv.invertible.tenth_avoid_parallel_3_6_sources,docs/research/cp_gemini.md,md,line:334,secondary,Invertible at tenth constraints
+adv.invertible.twelfth_limit_structural_sixths,docs/research/cp_gemini.md,md,line:337,secondary,Invertible at twelfth constraints

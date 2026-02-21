@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "source_of_truth": "docs/planning/rules-canonical.md",
+  "preset_ids": [
+    "species1",
+    "species2",
+    "species3",
+    "species4",
+    "species5",
+    "general_voice_leading",
+    "custom"
+  ],
+  "groups": {
+    "core_general_rules": [
+      "gen.input.single_exercise_per_file",
+      "gen.input.key_signature_required_and_stable",
+      "gen.input.timesig_supported",
+      "gen.input.species_supported",
+      "gen.input.voice_count_supported",
+      "gen.input_min_note_length.eighth_or_longer",
+      "gen.harmony.supported_sonorities",
+      "gen.motion.parallel_perfects_forbidden",
+      "gen.motion.direct_perfects_restricted",
+      "gen.spacing.upper_adjacent_max_octave",
+      "gen.spacing.tenor_bass_max_twelfth",
+      "gen.voice_crossing_and_overlap.restricted",
+      "gen.unison.interior_restricted",
+      "gen.melody.max_leap_octave",
+      "gen.melody.dissonant_leaps_forbidden",
+      "gen.melody.post_leap_compensation_required",
+      "gen.cadence.final_perfect_consonance_required",
+      "gen.interval.p4_dissonant_against_bass_in_two_voice",
+      "gen.motion.contrary_and_oblique_preferred",
+      "gen.melody.single_climax_preferred",
+      "gen.melody.consecutive_large_leaps_restricted"
+    ],
+    "tonal_general_rules": [
+      "gen.voice.leading_tone_not_doubled",
+      "gen.voice.chordal_seventh_resolves_down",
+      "gen.voice.leading_tone_resolves_up",
+      "gen.doubling.root_position_prefers_root",
+      "gen.doubling.first_inversion_no_bass_double_default",
+      "gen.doubling.diminished_first_inversion_double_third",
+      "gen.doubling.second_inversion_double_bass",
+      "gen.cadence.cadential_64_resolves_65_43",
+      "gen.nct.appoggiatura_escape_anticipation_pedal_retardation_supported"
+    ],
+    "advanced_deferred_rules": [
+      "adv.invertible.octave_treat_fifth_as_sensitive",
+      "adv.invertible.octave_suspension_pair_76_23_preferred",
+      "adv.invertible.tenth_avoid_parallel_3_6_sources",
+      "adv.invertible.twelfth_limit_structural_sixths"
+    ],
+    "species1_rules": [
+      "sp1.rhythm.one_to_one_only",
+      "sp1.vertical.consonance_only",
+      "sp1.opening.perfect_consonance_required",
+      "sp1.ending.unison_or_octave_required",
+      "sp1.cadence.penultimate_imperfect_consonance"
+    ],
+    "species2_rules": [
+      "sp2.rhythm.two_to_one_only",
+      "sp2.strong_beat.consonance_required",
+      "sp2.dissonance.weak_passing_stepwise",
+      "sp2.structure.downbeat_skeleton_no_parallel_perfects",
+      "sp2.downbeat_unison_discouraged"
+    ],
+    "species3_rules": [
+      "sp3.rhythm.four_to_one_only",
+      "sp3.strong_beat.consonance_required",
+      "sp3.dissonance.passing_neighbor_patterns_only",
+      "sp3.dissonance.double_neighbor_allowed_pattern",
+      "sp3.dissonance.cambiata_limited_exception",
+      "sp3.downbeat_unison_forbidden"
+    ],
+    "species4_rules": [
+      "sp4.rhythm.syncopated_ligature_profile",
+      "sp4.suspension.preparation_required",
+      "sp4.suspension.downbeat_dissonance_allowed_only_if_suspension",
+      "sp4.suspension.step_resolution_required",
+      "sp4.break_species.allowed_when_no_ligature_possible",
+      "sp4.allowed_suspension_classes_enforced",
+      "sp4.afterbeat_parallel_guard",
+      "sp4.all_voices_syncopation_avoidance"
+    ],
+    "species5_rules": [
+      "sp5.rhythm.mixed_species_profile",
+      "sp5.strong_beat.consonance_or_prepared_suspension_only",
+      "sp5.eighth_notes.weak_position_pairs_only",
+      "sp5.dissonance.licensed_patterns_only",
+      "sp5.cadence.strict_closure_required",
+      "sp5.eighth_grouping_no_triplet_like_clusters"
+    ]
+  },
+  "presets": [
+    {
+      "preset_id": "species1",
+      "description": "Strict first-species counterpoint preset.",
+      "base_profile": "strict_species",
+      "include_groups": ["core_general_rules", "species1_rules"],
+      "include_rules": [],
+      "exclude_groups": ["tonal_general_rules", "advanced_deferred_rules"],
+      "exclude_rules": [],
+      "severity_overrides": {
+        "gen.motion.direct_perfects_restricted": "error"
+      },
+      "deferred_rules": [
+        "adv.invertible.octave_treat_fifth_as_sensitive",
+        "adv.invertible.octave_suspension_pair_76_23_preferred",
+        "adv.invertible.tenth_avoid_parallel_3_6_sources",
+        "adv.invertible.twelfth_limit_structural_sixths"
+      ]
+    },
+    {
+      "preset_id": "species2",
+      "description": "Strict second-species counterpoint preset.",
+      "base_profile": "strict_species",
+      "include_groups": ["core_general_rules", "species2_rules"],
+      "include_rules": [],
+      "exclude_groups": ["tonal_general_rules", "advanced_deferred_rules"],
+      "exclude_rules": [],
+      "severity_overrides": {
+        "gen.motion.direct_perfects_restricted": "error"
+      },
+      "deferred_rules": [
+        "adv.invertible.octave_treat_fifth_as_sensitive",
+        "adv.invertible.octave_suspension_pair_76_23_preferred",
+        "adv.invertible.tenth_avoid_parallel_3_6_sources",
+        "adv.invertible.twelfth_limit_structural_sixths"
+      ]
+    },
+    {
+      "preset_id": "species3",
+      "description": "Strict third-species counterpoint preset.",
+      "base_profile": "strict_species",
+      "include_groups": ["core_general_rules", "species3_rules"],
+      "include_rules": [],
+      "exclude_groups": ["tonal_general_rules", "advanced_deferred_rules"],
+      "exclude_rules": [],
+      "severity_overrides": {
+        "gen.motion.direct_perfects_restricted": "error"
+      },
+      "deferred_rules": [
+        "adv.invertible.octave_treat_fifth_as_sensitive",
+        "adv.invertible.octave_suspension_pair_76_23_preferred",
+        "adv.invertible.tenth_avoid_parallel_3_6_sources",
+        "adv.invertible.twelfth_limit_structural_sixths"
+      ]
+    },
+    {
+      "preset_id": "species4",
+      "description": "Strict fourth-species counterpoint preset.",
+      "base_profile": "strict_species",
+      "include_groups": ["core_general_rules", "species4_rules"],
+      "include_rules": [],
+      "exclude_groups": ["tonal_general_rules", "advanced_deferred_rules"],
+      "exclude_rules": [],
+      "severity_overrides": {
+        "gen.motion.direct_perfects_restricted": "error"
+      },
+      "deferred_rules": [
+        "adv.invertible.octave_treat_fifth_as_sensitive",
+        "adv.invertible.octave_suspension_pair_76_23_preferred",
+        "adv.invertible.tenth_avoid_parallel_3_6_sources",
+        "adv.invertible.twelfth_limit_structural_sixths"
+      ]
+    },
+    {
+      "preset_id": "species5",
+      "description": "Strict fifth-species (florid) counterpoint preset.",
+      "base_profile": "strict_species",
+      "include_groups": ["core_general_rules", "species5_rules"],
+      "include_rules": [],
+      "exclude_groups": ["tonal_general_rules", "advanced_deferred_rules"],
+      "exclude_rules": [],
+      "severity_overrides": {
+        "gen.motion.direct_perfects_restricted": "error"
+      },
+      "deferred_rules": [
+        "adv.invertible.octave_treat_fifth_as_sensitive",
+        "adv.invertible.octave_suspension_pair_76_23_preferred",
+        "adv.invertible.tenth_avoid_parallel_3_6_sources",
+        "adv.invertible.twelfth_limit_structural_sixths"
+      ]
+    },
+    {
+      "preset_id": "general_voice_leading",
+      "description": "Common-practice general voice-leading preset.",
+      "base_profile": "general_voice_leading",
+      "include_groups": ["core_general_rules", "tonal_general_rules"],
+      "include_rules": [],
+      "exclude_groups": ["advanced_deferred_rules"],
+      "exclude_rules": [
+        "gen.interval.p4_dissonant_against_bass_in_two_voice"
+      ],
+      "severity_overrides": {
+        "gen.motion.direct_perfects_restricted": "warning"
+      },
+      "deferred_rules": [
+        "adv.invertible.octave_treat_fifth_as_sensitive",
+        "adv.invertible.octave_suspension_pair_76_23_preferred",
+        "adv.invertible.tenth_avoid_parallel_3_6_sources",
+        "adv.invertible.twelfth_limit_structural_sixths"
+      ]
+    },
+    {
+      "preset_id": "custom",
+      "description": "User-defined rule selection profile.",
+      "base_profile": "custom",
+      "include_groups": [],
+      "include_rules": [],
+      "exclude_groups": [],
+      "exclude_rules": [],
+      "severity_overrides": {},
+      "deferred_rules": [
+        "adv.invertible.octave_treat_fifth_as_sensitive",
+        "adv.invertible.octave_suspension_pair_76_23_preferred",
+        "adv.invertible.tenth_avoid_parallel_3_6_sources",
+        "adv.invertible.twelfth_limit_structural_sixths"
+      ],
+      "customization_model": {
+        "derive_from": [
+          "species1",
+          "species2",
+          "species3",
+          "species4",
+          "species5",
+          "general_voice_leading"
+        ],
+        "operations": ["add_rule", "remove_rule", "override_severity"]
+      }
+    }
+  ]
+}

@@ -40,6 +40,8 @@ Chosen defaults:
 - `docs/planning/rules-mapping.csv`: source mapping (`RuleId` <-> source paragraph/page/file).
 - `docs/planning/rules-decision-log.md`: conflict resolutions and rationale.
 - `docs/planning/rules-test-fixtures.md`: per-rule positive/negative fixture references.
+- `docs/planning/rules-presets.md`: human-readable preset-to-rule mapping.
+- `docs/planning/rules-presets.json`: machine-readable preset definitions (`species1..species5`, `general_voice_leading`, `custom`).
 
 ### Requirements (In-depth)
 - Extract all general + species-specific rules (1-5), including rhythm constraints, melodic constraints, vertical constraints, cadence constraints, suspension/NCT handling, voice-spacing/crossing, multi-voice constraints.
