@@ -1,0 +1,9 @@
+[package]
+name = "cp_harmony"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cp_core = { path = "../cp_core" }
+serde.workspace = true
+indexmap.workspace = true

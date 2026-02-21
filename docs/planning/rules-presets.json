@@ -196,6 +196,26 @@
       "severity_overrides": {
         "gen.motion.direct_perfects_restricted": "warning"
       },
+      "rule_param_defaults": {
+        "gen.motion.contrary_and_oblique_preferred": {
+          "pair_mode": "all_pairs",
+          "similar_motion_ratio_max": 0.7,
+          "min_observations": 1
+        },
+        "gen.melody.max_leap_octave": {
+          "max_leap_semitones": 12
+        },
+        "gen.melody.post_leap_compensation_required": {
+          "large_leap_min_semitones": 5,
+          "compensation_max_semitones": 2,
+          "required_contrary": true,
+          "lookahead_notes": 1
+        },
+        "gen.melody.consecutive_large_leaps_restricted": {
+          "large_leap_min_semitones": 5,
+          "same_direction_only": true
+        }
+      },
       "deferred_rules": [
         "adv.invertible.octave_treat_fifth_as_sensitive",
         "adv.invertible.octave_suspension_pair_76_23_preferred",

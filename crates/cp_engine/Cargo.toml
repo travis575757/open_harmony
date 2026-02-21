@@ -1,0 +1,17 @@
+[package]
+name = "cp_engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cp_core = { path = "../cp_core" }
+cp_rules = { path = "../cp_rules" }
+cp_harmony = { path = "../cp_harmony" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+indexmap.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

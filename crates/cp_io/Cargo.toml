@@ -1,0 +1,10 @@
+[package]
+name = "cp_io"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cp_core = { path = "../cp_core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
