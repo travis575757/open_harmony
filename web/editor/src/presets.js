@@ -5,6 +5,8 @@ export const BUILTIN_PRESET_IDS = [
   "species4",
   "species5",
   "general_voice_leading",
+  "moderate_classical",
+  "relaxed",
   "custom",
 ];
 
@@ -22,6 +24,10 @@ export function presetLabel(presetId) {
       return "Species 5 (Florid)";
     case "general_voice_leading":
       return "General Voice Leading";
+    case "moderate_classical":
+      return "Moderate / Classical";
+    case "relaxed":
+      return "Relaxed";
     case "custom":
       return "Custom";
     default:

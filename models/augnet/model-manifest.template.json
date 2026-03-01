@@ -1,0 +1,90 @@
+{
+  "schema_version": 2,
+  "status": "generated",
+  "generated_utc": "1970-01-01T00:00:00+00:00",
+  "model_id": "augmentednet-v1",
+  "source": {
+    "hdf5_path": "models/augnet/source/AugmentedNet.hdf5",
+    "hdf5_sha256": "<sha256>"
+  },
+  "onnx": {
+    "onnx_path": "models/augnet/AugmentedNet.onnx",
+    "onnx_sha256": "<sha256>",
+    "opset": 13
+  },
+  "conversion": {
+    "tool": "tools/augnet/convert_to_onnx.py",
+    "seed": 0,
+    "enforce_fixed_time_axis": true,
+    "skip_runtime_check": false,
+    "allow_output_head_mismatch": false,
+    "allow_opset_override": false
+  },
+  "environment": {
+    "python": "<python-version>",
+    "platform": "<platform>",
+    "tensorflow": "<tensorflow-version>",
+    "tf2onnx": "<tf2onnx-version>",
+    "onnx": "<onnx-version>",
+    "onnxruntime": "<onnxruntime-version>"
+  },
+  "reproducibility": {
+    "policy_id": "functional-equivalence-v1",
+    "policy": "Functional reproducibility is required in Phase 1: identical input/output signatures and numerically equivalent inference outputs across repeated conversions.",
+    "byte_identical_required": false
+  },
+  "signature": {
+    "inputs": [
+      {
+        "name": "X_Bass19",
+        "shape": [
+          null,
+          640,
+          19
+        ],
+        "dtype": "float32"
+      }
+    ],
+    "fixed_time_axis_contract": {
+      "dimension": 1,
+      "enforced": true,
+      "lengths": [
+        640
+      ],
+      "all_inputs_fixed": true
+    },
+    "onnx_input_names": [
+      "X_Bass19"
+    ],
+    "onnx_input_shapes": [
+      [
+        null,
+        640,
+        19
+      ]
+    ],
+    "keras_output_names": [
+      "RomanNumeral31"
+    ],
+    "keras_output_heads": [
+      "RomanNumeral31"
+    ],
+    "onnx_output_names": [
+      "RomanNumeral31"
+    ],
+    "onnx_output_heads": [
+      "RomanNumeral31"
+    ],
+    "output_head_mapping": [
+      {
+        "index": 0,
+        "keras_output_name": "RomanNumeral31",
+        "keras_head": "RomanNumeral31",
+        "onnx_output_name": "RomanNumeral31",
+        "onnx_head": "RomanNumeral31",
+        "match": true
+      }
+    ],
+    "output_head_order_match": true
+  }
+}

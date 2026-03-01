@@ -135,7 +135,11 @@ fn collect_note_starts_and_end_tick(score: &NormalizedScore) -> (Vec<u32>, u32) 
     (starts, end_tick.max(1))
 }
 
-fn measure_segment_starts(score: &NormalizedScore, end_tick: u32, chords_per_bar: &[u8]) -> Vec<u32> {
+fn measure_segment_starts(
+    score: &NormalizedScore,
+    end_tick: u32,
+    chords_per_bar: &[u8],
+) -> Vec<u32> {
     let tpq = score_tpq(score);
     let tpm = ticks_per_measure(&score.meta.time_signature, tpq).max(1);
     let measure_count = ((end_tick.saturating_sub(1)) / tpm).saturating_add(1);
@@ -190,7 +194,8 @@ fn harmonic_slice_starts(
         HarmonicRhythm::FixedPerBar { chords_per_bar } => {
             if *chords_per_bar == 0 {
                 warnings.push(
-                    "harmonic rhythm fixed_per_bar requires chords_per_bar >= 1; using 1".to_string(),
+                    "harmonic rhythm fixed_per_bar requires chords_per_bar >= 1; using 1"
+                        .to_string(),
                 );
             }
             measure_segment_starts(score, end_tick, &[(*chords_per_bar).max(1)])
@@ -207,7 +212,8 @@ fn harmonic_slice_starts(
         HarmonicRhythm::PerMeasure { chords_per_bar } => {
             if chords_per_bar.is_empty() {
                 warnings.push(
-                    "harmonic rhythm per_measure requires at least one value; using [1]".to_string(),
+                    "harmonic rhythm per_measure requires at least one value; using [1]"
+                        .to_string(),
                 );
                 return measure_segment_starts(score, end_tick, &[1]);
             }
@@ -717,8 +723,8 @@ fn detect_nct(score: &NormalizedScore) -> Vec<NctTag> {
 mod tests {
     use super::*;
     use cp_core::{
-        AnalysisConfig, AnalysisRequest, HarmonicRhythm, KeySignature, PresetId, ScoreMeta,
-        TimeSignature, Voice,
+        AnalysisBackend, AnalysisConfig, AnalysisRequest, AugmentedNetBackendConfig,
+        HarmonicRhythm, KeySignature, PresetId, ScoreMeta, TimeSignature, Voice,
     };
     use std::collections::BTreeMap;
 
@@ -759,6 +765,8 @@ mod tests {
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
                 harmonic_rhythm: HarmonicRhythm::NoteOnset,
+                analysis_backend: AnalysisBackend::RuleBased,
+                augnet_backend: AugmentedNetBackendConfig::default(),
             },
         }
     }
@@ -827,6 +835,8 @@ mod tests {
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
                 harmonic_rhythm: HarmonicRhythm::NoteOnset,
+                analysis_backend: AnalysisBackend::RuleBased,
+                augnet_backend: AugmentedNetBackendConfig::default(),
             },
         }
     }

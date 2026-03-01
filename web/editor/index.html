@@ -18,6 +18,11 @@
         <label for="preset-select">Preset</label>
         <select id="preset-select"></select>
 
+        <label class="toggle-row">
+          <input id="rule-checker-toggle" type="checkbox" checked>
+          <span>Enable Rule Checker</span>
+        </label>
+
         <label for="custom-base-select">Custom Base Preset</label>
         <select id="custom-base-select"></select>
 
@@ -69,6 +74,11 @@
         <label class="toggle-row">
           <input id="roman-toggle" type="checkbox">
           <span>Show Roman Numerals</span>
+        </label>
+
+        <label class="toggle-row">
+          <input id="harmonic-slices-toggle" type="checkbox" checked>
+          <span>Show Harmonic Slices</span>
         </label>
       </section>
 
@@ -125,6 +135,29 @@
 
       <section>
         <h2>Engine</h2>
+        <label for="analysis-method-select">Analysis Method</label>
+        <select id="analysis-method-select">
+          <option value="rule_based" selected>Rule-based</option>
+          <option value="augnet_onnx">AugmentedNet ONNX</option>
+        </select>
+
+        <div id="harmonic-rhythm-rule-controls">
+          <label for="harmonic-rhythm-chords-per-bar">Harmonic Rhythm (Rule-based)</label>
+          <select id="harmonic-rhythm-chords-per-bar">
+            <option value="1" selected>1 chord per bar</option>
+            <option value="2">2 chords per bar</option>
+            <option value="3">3 chords per bar</option>
+            <option value="4">4 chords per bar</option>
+          </select>
+        </div>
+        <div id="harmonic-rhythm-auto-note" class="subtle" hidden>
+          Harmonic rhythm is automatic in AugmentedNet mode.
+        </div>
+
+        <label class="toggle-row">
+          <input id="augnet-debug-toggle" type="checkbox">
+          <span>Show AugNet debug logits</span>
+        </label>
         <div id="engine-status" class="subtle">Initializing analyzer...</div>
         <ul id="warning-list" class="warning-list"></ul>
       </section>
@@ -134,16 +167,19 @@
       <section class="card">
         <h2>Score</h2>
         <div class="score-toolbar">
-          <select id="insert-duration">
-            <option value="8">Whole (8)</option>
-            <option value="4">Half (4)</option>
-            <option value="2" selected>Quarter (2)</option>
-            <option value="1">Eighth (1)</option>
-          </select>
-          <button id="insert-note-before" type="button">Insert Note Before</button>
-          <button id="insert-note-after" type="button">Insert Note After</button>
-          <button id="insert-rest-before" type="button">Insert Rest Before</button>
-          <button id="insert-rest-after" type="button">Insert Rest After</button>
+          <div class="insert-group">
+            <div class="insert-group-title">Insert Notes</div>
+            <div id="insert-note-buttons" class="insert-buttons"></div>
+          </div>
+          <div class="insert-group">
+            <div class="insert-group-title">Insert Rests</div>
+            <div id="insert-rest-buttons" class="insert-buttons"></div>
+          </div>
+          <button id="insert-note-before" type="button">Insert Before</button>
+          <button id="insert-note-after" type="button">Insert After</button>
+          <button id="replace-selected-note" type="button">Replace Selected</button>
+          <button id="toggle-selected-dot" type="button">Toggle Dot</button>
+          <button id="toggle-selected-tie" type="button">Toggle Tie → Next</button>
           <button id="delete-selected-note" type="button">Delete Selected</button>
         </div>
         <div class="subtle">Shortcuts: Ctrl/Cmd+C copy, Ctrl/Cmd+X cut, Ctrl/Cmd+V paste (selected note).</div>
@@ -153,7 +189,7 @@
 
       <section class="card">
         <h2>Voice Editors (ABC tokens)</h2>
-        <div class="subtle">Duration is required/visible as eighth-note units: `C8` (whole), `C4` (half), `C2` (quarter), `C1` (eighth). Use `z4` for a rest.</div>
+        <div class="subtle">Durations are in eighth-note units and can be fractions: `C8` (whole), `C2` (quarter), `C/2` (16th), `C/4` (32nd), `C16` (double whole). Use `z...` for rests.</div>
         <div id="voice-editors"></div>
         <div id="parse-errors" class="error-block"></div>
       </section>
@@ -166,6 +202,10 @@
 
       <section class="card" id="harmony-card" hidden>
         <h2>Harmonic Slices</h2>
+        <div class="btn-row">
+          <button id="copy-harmony-dump" type="button">Copy Harmony Output</button>
+        </div>
+        <textarea id="harmony-dump" rows="10" readonly placeholder="Harmony output TSV will appear here."></textarea>
         <ul id="harmony-list" class="harmony-list"></ul>
       </section>
     </main>

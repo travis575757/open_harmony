@@ -1,6 +1,6 @@
 use cp_core::{
-    AnalysisConfig, AnalysisRequest, HarmonicRhythm, KeySignature, NormalizedScore, NoteEvent,
-    PresetId, ScaleMode, ScoreMeta, TimeSignature, Voice,
+    AnalysisBackend, AnalysisConfig, AnalysisRequest, AugmentedNetBackendConfig, HarmonicRhythm,
+    KeySignature, NormalizedScore, NoteEvent, PresetId, ScaleMode, ScoreMeta, TimeSignature, Voice,
 };
 use cp_engine::{analyze, resolve_preset};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -68,6 +68,8 @@ fn mk_request(score: NormalizedScore, preset_id: PresetId, keep_rules: &[&str]) 
             severity_overrides: BTreeMap::new(),
             rule_params: BTreeMap::new(),
             harmonic_rhythm: HarmonicRhythm::NoteOnset,
+            analysis_backend: AnalysisBackend::RuleBased,
+            augnet_backend: AugmentedNetBackendConfig::default(),
         },
     };
 

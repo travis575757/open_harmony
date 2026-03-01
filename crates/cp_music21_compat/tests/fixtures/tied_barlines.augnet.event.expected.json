@@ -1,0 +1,38 @@
+[
+  {
+    "s_offset": 0.0,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4"
+    ],
+    "s_intervals": [],
+    "s_is_onset": [
+      true
+    ]
+  },
+  {
+    "s_offset": 4.0,
+    "s_duration": 2.0,
+    "s_measure": 2,
+    "s_notes": [
+      "C4"
+    ],
+    "s_intervals": [],
+    "s_is_onset": [
+      false
+    ]
+  },
+  {
+    "s_offset": 6.0,
+    "s_duration": 2.0,
+    "s_measure": 2,
+    "s_notes": [
+      "D4"
+    ],
+    "s_intervals": [],
+    "s_is_onset": [
+      true
+    ]
+  }
+]

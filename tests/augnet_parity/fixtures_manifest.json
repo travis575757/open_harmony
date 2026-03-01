@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "fixed_offset": 0.25,
+  "max_steps": 640,
+  "fixtures": [
+    {
+      "id": "tied_barlines",
+      "musicxml_path": "tests/augnet_parity/fixtures/tied_barlines.musicxml",
+      "baseline_artifact": "tied_barlines.json",
+      "tags": [
+        "ties"
+      ]
+    },
+    {
+      "id": "pickup_anacrusis",
+      "musicxml_path": "tests/augnet_parity/fixtures/pickup_anacrusis.musicxml",
+      "baseline_artifact": "pickup_anacrusis.json",
+      "tags": [
+        "anacrusis"
+      ]
+    },
+    {
+      "id": "enharmonic_double",
+      "musicxml_path": "tests/augnet_parity/fixtures/enharmonic_double.musicxml",
+      "baseline_artifact": "enharmonic_double.json",
+      "tags": [
+        "enharmonic"
+      ]
+    },
+    {
+      "id": "dense_poly",
+      "musicxml_path": "tests/augnet_parity/fixtures/dense_poly.musicxml",
+      "baseline_artifact": "dense_poly.json",
+      "tags": [
+        "dense_poly"
+      ]
+    },
+    {
+      "id": "chunk_boundary",
+      "musicxml_path": "tests/augnet_parity/fixtures/chunk_boundary.musicxml",
+      "baseline_artifact": "chunk_boundary.json",
+      "tags": [
+        "chunk_boundary"
+      ]
+    },
+    {
+      "id": "divisions_change",
+      "musicxml_path": "tests/augnet_parity/fixtures/divisions_change.musicxml",
+      "baseline_artifact": "divisions_change.json",
+      "tags": [
+        "divisions_change"
+      ]
+    },
+    {
+      "id": "rest_heavy",
+      "musicxml_path": "tests/augnet_parity/fixtures/rest_heavy.musicxml",
+      "baseline_artifact": "rest_heavy.json",
+      "tags": [
+        "rest_heavy"
+      ]
+    },
+    {
+      "id": "long_tie_chain",
+      "musicxml_path": "tests/augnet_parity/fixtures/long_tie_chain.musicxml",
+      "baseline_artifact": "long_tie_chain.json",
+      "tags": [
+        "long_tie_chain"
+      ]
+    },
+    {
+      "id": "multi_part_enharmonic",
+      "musicxml_path": "tests/augnet_parity/fixtures/multi_part_enharmonic.musicxml",
+      "baseline_artifact": "multi_part_enharmonic.json",
+      "tags": [
+        "multi_part_enharmonic"
+      ]
+    }
+  ]
+}

@@ -19,9 +19,9 @@ pub fn to_response_json(resp: &AnalysisResponse) -> Result<String, IoError> {
 mod tests {
     use super::*;
     use cp_core::{
-        AnalysisConfig, AnalysisRequest, AnalysisResponse, AnalysisSummary, HarmonicRhythm,
-        HarmonicSlice, KeySignature, NctTag, NormalizedScore, PresetId, ScaleMode, ScoreMeta,
-        TimeSignature, Voice,
+        AnalysisBackend, AnalysisConfig, AnalysisRequest, AnalysisResponse, AnalysisSummary,
+        AugmentedNetBackendConfig, HarmonicRhythm, HarmonicSlice, KeySignature, NctTag,
+        NormalizedScore, PresetId, ScaleMode, ScoreMeta, TimeSignature, Voice,
     };
     use std::collections::BTreeMap;
 
@@ -54,6 +54,8 @@ mod tests {
                 severity_overrides: BTreeMap::new(),
                 rule_params: BTreeMap::new(),
                 harmonic_rhythm: HarmonicRhythm::NoteOnset,
+                analysis_backend: AnalysisBackend::RuleBased,
+                augnet_backend: AugmentedNetBackendConfig::default(),
             },
         };
         let st = serde_json::to_string(&req).expect("serialize");
@@ -83,6 +85,41 @@ mod tests {
         }"#;
         let reparsed = parse_request_json(raw).expect("parse legacy request");
         assert_eq!(reparsed.config.harmonic_rhythm, HarmonicRhythm::NoteOnset);
+        assert_eq!(reparsed.config.analysis_backend, AnalysisBackend::RuleBased);
+        assert_eq!(reparsed.config.augnet_backend.max_steps, 640);
+    }
+
+    #[test]
+    fn parses_new_general_presets_relaxed_and_moderate() {
+        for preset in ["moderate_classical", "relaxed"] {
+            let raw = format!(
+                r#"{{
+                  "score": {{
+                    "meta": {{
+                      "exercise_count": 1,
+                      "key_signature": {{"tonic_pc": 0, "mode": "major"}},
+                      "time_signature": {{"numerator": 4, "denominator": 4}},
+                      "ticks_per_quarter": 480
+                    }},
+                    "voices": [{{"voice_index": 0, "name": "v0", "notes": []}}]
+                  }},
+                  "config": {{
+                    "preset_id": "{}",
+                    "enabled_rule_ids": [],
+                    "disabled_rule_ids": [],
+                    "severity_overrides": {{}},
+                    "rule_params": {{}}
+                  }}
+                }}"#,
+                preset
+            );
+            let reparsed = parse_request_json(&raw).expect("parse new preset request");
+            match (preset, reparsed.config.preset_id) {
+                ("moderate_classical", PresetId::ModerateClassical) => {}
+                ("relaxed", PresetId::Relaxed) => {}
+                _ => panic!("unexpected parsed preset for {}", preset),
+            }
+        }
     }
 
     #[test]
@@ -103,6 +140,7 @@ mod tests {
                 missing_tones: vec![],
                 chord_form: Some("complete_triad".to_string()),
             }],
+            harmonic_outputs: vec![],
             nct_tags: vec![NctTag {
                 note_id: "n1".to_string(),
                 tag_type: "passing".to_string(),

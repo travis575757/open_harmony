@@ -79,3 +79,52 @@ test("buildAnalysisRequest preserves UI voice order", () => {
   assert.equal(req.score.voices[0].notes.length, 2);
   assert.equal(req.score.voices[1].notes.length, 4);
 });
+
+test("buildAnalysisRequest includes selected analysis backend", () => {
+  const state = {
+    preset_id: "species1",
+    key_tonic_pc: 0,
+    mode: "major",
+    analysis_backend: "augnet_onnx",
+    rule_harmonic_rhythm_chords_per_bar: 4,
+    time_signature: { numerator: 4, denominator: 4 },
+    voices: [
+      {
+        voice_index: 0,
+        name: "Upper",
+        notes: [{ note_id: "v0_n0", midi: 60, is_rest: false, duration_eighths: 2, tie_start: false, tie_end: false }],
+      },
+    ],
+  };
+  const req = buildAnalysisRequest(state, {
+    enabled_rule_ids: [],
+    disabled_rule_ids: [],
+    severity_overrides: {},
+    rule_params: {},
+  });
+  assert.equal(req.config.analysis_backend, "augnet_onnx");
+});
+
+test("AugNet-capable modes ignore rule harmonic-rhythm input", () => {
+  const baseState = {
+    preset_id: "species1",
+    key_tonic_pc: 0,
+    mode: "major",
+    time_signature: { numerator: 4, denominator: 4 },
+    rule_harmonic_rhythm_chords_per_bar: 4,
+    voices: [
+      {
+        voice_index: 0,
+        name: "Upper",
+        notes: [{ note_id: "v0_n0", midi: 60, is_rest: false, duration_eighths: 2, tie_start: false, tie_end: false }],
+      },
+    ],
+  };
+
+  const aug = buildAnalysisRequest(
+    { ...baseState, analysis_backend: "augnet_onnx" },
+    { enabled_rule_ids: [], disabled_rule_ids: [], severity_overrides: {}, rule_params: {} },
+  );
+
+  assert.deepEqual(aug.config.harmonic_rhythm, { mode: "note_onset" });
+});

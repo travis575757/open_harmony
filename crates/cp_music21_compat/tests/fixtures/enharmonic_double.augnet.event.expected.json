@@ -1,0 +1,24 @@
+[
+  {
+    "s_offset": 0.0,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      true,
+      true,
+      true,
+      true
+    ]
+  }
+]

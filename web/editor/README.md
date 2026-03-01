@@ -10,6 +10,62 @@ This module implements the educational web editor:
 - MusicXML import/export
 - local persistence for custom rule profiles and session settings
 
+## Phase 9 Analysis Modes (AugmentedNet Web Integration)
+
+The editor now exposes explicit analysis backend selection:
+
+- `rule_based` (default)
+- `augnet_onnx`
+
+### Request contract
+
+Every analysis request now sends:
+
+- `config.analysis_backend` (explicit mode selector value)
+- `config.harmonic_rhythm` (mode-aware)
+
+Mode-specific harmonic rhythm behavior:
+
+- `rule_based`: uses UI-selected fixed-per-bar rhythm (`chords_per_bar`).
+- `augnet_onnx`: UI harmonic-rhythm input is hidden/ignored and request uses `note_onset` (AugmentedNet determines segmentation internally).
+
+### Harmonic label rendering contract
+
+- `rule_based`:
+  - renders existing rule-based `harmonic_slices` labels.
+- `augnet_onnx`:
+  - voice-leading/counterpoint diagnostics still come from the rule engine
+  - renders AugmentedNet `harmonic_outputs` (`source=augnet_onnx`) with:
+    - Roman numeral
+    - local key
+    - tonicized key (with local-key context text)
+    - chord quality
+    - inversion
+    - confidence summary
+
+### Raw logits / debug toggle
+
+- Raw logits are carried in `harmonic_outputs[*].logits`.
+- Hidden by default.
+- Visible only when `Show AugNet debug logits` toggle is enabled.
+
+### Fatal behavior (no fallback)
+
+- If `augnet_onnx` is selected and backend initialization/inference is unavailable, the UI enters a fatal analysis state.
+- No JavaScript analysis fallback is used.
+
+## Duration Range
+
+- Voice editor token durations support fractional eighth units from **32nd** (`/4`) through **double whole** (`16`).
+- Score insert palettes include note/rest buttons with abcjs previews.
+- Examples:
+  - `C/4` = 32nd note
+  - `C/2` = 16th note
+  - `C1` = eighth note
+  - `C8` = whole note
+  - `C16` = double whole note
+  - `z3/2` = dotted eighth rest
+
 ## Prerequisites
 
 1. Rust toolchain installed

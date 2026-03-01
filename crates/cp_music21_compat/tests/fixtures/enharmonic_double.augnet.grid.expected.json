@@ -1,0 +1,354 @@
+[
+  {
+    "s_offset": 0.0,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  {
+    "s_offset": 0.25,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 0.5,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 0.75,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 1.0,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 1.25,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 1.5,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 1.75,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 2.0,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 2.25,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 2.5,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 2.75,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 3.0,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 3.25,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 3.5,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  {
+    "s_offset": 3.75,
+    "s_duration": 4.0,
+    "s_measure": 1,
+    "s_notes": [
+      "C4",
+      "E--4",
+      "G-4",
+      "F##4"
+    ],
+    "s_intervals": [
+      "d3",
+      "d5",
+      "AA4"
+    ],
+    "s_is_onset": [
+      false,
+      false,
+      false,
+      false
+    ]
+  }
+]

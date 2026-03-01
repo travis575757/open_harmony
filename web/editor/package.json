@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "debug:augnet": "node scripts/augnet-debug-dump.mjs",
+    "debug:abc-timing": "node scripts/musicxml-abc-oracle-diff.mjs"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.20.1"
+  },
+  "devDependencies": {
+    "abcjs": "^6.6.2"
   }
 }

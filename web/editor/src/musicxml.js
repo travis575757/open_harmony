@@ -1,3 +1,5 @@
+import { normalizeDurationEighths } from "./abcNotation.js";
+
 const MAJOR_FIFTHS_TO_PC = {
   "-7": 11,
   "-6": 6,
@@ -97,6 +99,16 @@ function pitchToMidi(step, alter, octave) {
   return (octave + 1) * 12 + base + alter;
 }
 
+function m21NameFromStepAlterOctave(step, alter, octave) {
+  const acc =
+    alter > 0
+      ? "#".repeat(alter)
+      : alter < 0
+        ? "-".repeat(Math.abs(alter))
+        : "";
+  return `${step.toUpperCase()}${acc}${octave}`;
+}
+
 function midiToPitch(midi) {
   const pc = ((midi % 12) + 12) % 12;
   const octave = Math.floor(midi / 12) - 1;
@@ -122,7 +134,17 @@ function parseNoteBlocks(measureBlock) {
   );
 }
 
+function parseMeasureEvents(measureBlock) {
+  return [...measureBlock.matchAll(/<(?:\w+:)?(note|backup|forward)\b[^>]*>([\s\S]*?)<\/(?:\w+:)?\1>/gi)].map(
+    (m) => ({
+      type: String(m[1]).toLowerCase(),
+      block: m[2],
+    }),
+  );
+}
+
 const NOTE_TYPE_TO_QUARTERS = {
+  breve: 8,
   whole: 4,
   half: 2,
   quarter: 1,
@@ -132,7 +154,7 @@ const NOTE_TYPE_TO_QUARTERS = {
   "64th": 0.0625,
 };
 
-const NOTE_TYPE_ORDER = ["whole", "half", "quarter", "eighth", "16th", "32nd", "64th"];
+const NOTE_TYPE_ORDER = ["breve", "whole", "half", "quarter", "eighth", "16th", "32nd", "64th"];
 
 function dotMultiplier(dotCount) {
   const d = Math.max(0, Math.min(2, dotCount || 0));
@@ -147,7 +169,14 @@ function durationEighthsFromType(noteType, dotCount) {
   if (!noteType) return null;
   const quarters = NOTE_TYPE_TO_QUARTERS[noteType.toLowerCase()];
   if (!quarters) return null;
-  return Math.max(1, Math.round(quarters * 2 * dotMultiplier(dotCount)));
+  return normalizeDurationEighths(quarters * 2 * dotMultiplier(dotCount), null);
+}
+
+function durationQuartersFromType(noteType, dotCount) {
+  if (!noteType) return null;
+  const quarters = NOTE_TYPE_TO_QUARTERS[noteType.toLowerCase()];
+  if (!quarters) return null;
+  return quarters * dotMultiplier(dotCount);
 }
 
 function durationDivisionsFromType(noteType, dotCount, divisions) {
@@ -174,6 +203,7 @@ function noteTypeFromDurationDivisions(durationDivisions, divisions) {
 export function importMusicXml(xmlText, opts = {}) {
   const maxVoices = opts.maxVoices ?? 4;
   const fallbackPresetId = opts.presetId ?? "species1";
+  const EIGHTH_EPS = 1e-6;
 
   const normalized = String(xmlText || "");
   if (!normalized.includes("<score-partwise") && !normalized.includes("<score-timewise")) {
@@ -194,46 +224,82 @@ export function importMusicXml(xmlText, opts = {}) {
     throw new Error("No <part> blocks found in MusicXML.");
   }
   const byVoiceKey = new Map();
+  const fallbackMeasureQuarters = Math.max(0.25, (beats * 4) / Math.max(1, beatType));
+  let firstMeasureSpanQuarters = 0;
 
   for (let p = 0; p < partBlocks.length; p += 1) {
     const partBlock = partBlocks[p];
     const measures = parseMeasureBlocks(partBlock);
     let defaultDivisions = 1;
-    const cursorByVoice = new Map();
+    let partCursorQuarters = 0;
+    const lastStartByVoice = new Map();
 
-    for (const measureBlock of measures) {
+    for (let measureIndex = 0; measureIndex < measures.length; measureIndex += 1) {
+      const measureBlock = measures[measureIndex];
       const d = getTagNumber(measureBlock, "divisions", null);
       if (d != null && d > 0) {
         defaultDivisions = d;
       }
-      for (const noteBlock of parseNoteBlocks(measureBlock)) {
+      const events = parseMeasureEvents(measureBlock);
+      let measureCursorQuarters = 0;
+      let measureMaxEndQuarters = 0;
+      for (const event of events) {
+        if (event.type === "backup" || event.type === "forward") {
+          const durationDivRaw = getTagNumber(event.block, "duration", null);
+          const durationQuarters =
+            (durationDivRaw != null && durationDivRaw > 0
+              ? durationDivRaw / defaultDivisions
+              : durationQuartersFromType(getTag(event.block, "type"), 0)) ?? 0;
+          if (event.type === "backup") {
+            measureCursorQuarters = Math.max(0, measureCursorQuarters - durationQuarters);
+          } else {
+            measureCursorQuarters += durationQuarters;
+            measureMaxEndQuarters = Math.max(measureMaxEndQuarters, measureCursorQuarters);
+          }
+          continue;
+        }
+
+        const noteBlock = event.block;
+        const isGrace = /<(?:\w+:)?grace\b/i.test(noteBlock);
+        if (isGrace) {
+          // Grace notes are non-metrical; skip them in editor import timeline.
+          continue;
+        }
         const voiceTag = getTagNumber(noteBlock, "voice", 1);
-        const voiceKey = `${p}-${voiceTag}`;
+        const staffTag = getTagNumber(noteBlock, "staff", 1);
+        const voiceKey = `${p}-${staffTag}-${voiceTag}`;
         const isChordTone = /<chord\s*\/>/i.test(noteBlock);
         const isRest = /<rest\b/i.test(noteBlock);
         const type = getTag(noteBlock, "type");
         const dots = parseDotCount(noteBlock);
         const durationDivRaw = getTagNumber(noteBlock, "duration", null);
-        const cursor = cursorByVoice.get(voiceKey) ?? 0;
 
+        const durationQuarters =
+          (durationDivRaw != null && durationDivRaw > 0
+            ? durationDivRaw / defaultDivisions
+            : durationQuartersFromType(type, dots)) ?? 1;
         const durationEighths =
-          (durationDivRaw != null && durationDivRaw > 0
-            ? Math.max(1, Math.round((durationDivRaw * 2) / defaultDivisions))
-            : durationEighthsFromType(type, dots)) ?? 2;
-        const durationDiv =
-          (durationDivRaw != null && durationDivRaw > 0
-            ? durationDivRaw
-            : durationDivisionsFromType(type, dots, defaultDivisions)) ??
-          Math.max(1, Math.round((durationEighths * defaultDivisions) / 2));
+          durationEighthsFromType(type, dots) ??
+          normalizeDurationEighths(durationQuarters * 2, null) ??
+          2;
+
+        const startQuarters = isChordTone
+          ? (lastStartByVoice.get(voiceKey) ?? partCursorQuarters + measureCursorQuarters)
+          : partCursorQuarters + measureCursorQuarters;
+        const endQuarters = startQuarters + durationQuarters;
+        measureMaxEndQuarters = Math.max(measureMaxEndQuarters, endQuarters - partCursorQuarters);
+
         const arr = byVoiceKey.get(voiceKey) ?? [];
         if (isRest) {
           arr.push({
-            start_divisions: cursor,
+            start_quarters: startQuarters,
             midi: 60,
             is_rest: true,
             duration_eighths: durationEighths,
             tie_start: false,
             tie_end: false,
+            voice_num: voiceTag,
+            staff_num: staffTag,
           });
           byVoiceKey.set(voiceKey, arr);
         } else {
@@ -243,44 +309,105 @@ export function importMusicXml(xmlText, opts = {}) {
           const midi = pitchToMidi(step, alter, octave);
           if (midi != null) {
             arr.push({
-              start_divisions: cursor,
+              start_quarters: startQuarters,
               midi,
               is_rest: false,
+              spelling_m21: m21NameFromStepAlterOctave(step, alter, octave),
               duration_eighths: durationEighths,
               tie_start: /<tie\b[^>]*type=["']start["'][^>]*\/?>/i.test(noteBlock),
               tie_end: /<tie\b[^>]*type=["']stop["'][^>]*\/?>/i.test(noteBlock),
+              voice_num: voiceTag,
+              staff_num: staffTag,
             });
             byVoiceKey.set(voiceKey, arr);
           }
         }
 
+        lastStartByVoice.set(voiceKey, startQuarters);
         if (!isChordTone) {
-          cursorByVoice.set(voiceKey, cursor + durationDiv);
+          measureCursorQuarters += durationQuarters;
+          measureMaxEndQuarters = Math.max(measureMaxEndQuarters, measureCursorQuarters);
         }
       }
+      const span = measureMaxEndQuarters > 0 ? measureMaxEndQuarters : fallbackMeasureQuarters;
+      if (measureIndex === 0) {
+        firstMeasureSpanQuarters = Math.max(firstMeasureSpanQuarters, span);
+      }
+      partCursorQuarters += span;
     }
   }
 
-  const voiceKeys = [...byVoiceKey.keys()].sort();
-  const selected = voiceKeys.slice(0, maxVoices);
+  const rankedVoices = [...byVoiceKey.entries()].map(([key, notes]) => {
+    const sounding = notes.filter((n) => !n.is_rest);
+    const durationSum = sounding.reduce(
+      (acc, n) => acc + Math.max(0, normalizeDurationEighths(n.duration_eighths, 0)),
+      0,
+    );
+    const firstStart = notes.reduce((acc, n) => Math.min(acc, n.start_quarters), Number.POSITIVE_INFINITY);
+    const [partRaw, staffRaw, voiceRaw] = key.split("-");
+    return {
+      key,
+      notes,
+      part_num: Number.parseInt(partRaw, 10) || 0,
+      staff_num: Number.parseInt(staffRaw, 10) || 0,
+      voice_num: Number.parseInt(voiceRaw, 10) || 0,
+      sounding_count: sounding.length,
+      duration_sum: durationSum,
+      first_start: Number.isFinite(firstStart) ? firstStart : Number.POSITIVE_INFINITY,
+    };
+  });
+  rankedVoices.sort(
+    (a, b) =>
+      b.sounding_count - a.sounding_count ||
+      b.duration_sum - a.duration_sum ||
+      a.first_start - b.first_start ||
+      a.part_num - b.part_num ||
+      a.staff_num - b.staff_num ||
+      a.voice_num - b.voice_num,
+  );
+
+  const selected = rankedVoices.slice(0, Math.max(1, maxVoices));
+  selected.sort(
+    (a, b) =>
+      a.part_num - b.part_num || a.staff_num - b.staff_num || a.voice_num - b.voice_num || a.key.localeCompare(b.key),
+  );
+
   if (selected.length === 0) {
     throw new Error("No notes were parsed from the MusicXML file.");
   }
-  const voices = selected.map((key, index) => {
-    const notes = (byVoiceKey.get(key) ?? []).sort((a, b) => a.start_divisions - b.start_divisions);
+  const voices = selected.map((entry, index) => {
+    const notes = entry.notes.sort(
+      (a, b) => a.start_quarters - b.start_quarters || a.midi - b.midi || Number(a.is_rest) - Number(b.is_rest),
+    );
     return {
       voice_index: index,
       name: `Voice ${index + 1}`,
+      source_staff_num: entry.staff_num,
+      source_voice_num: entry.voice_num,
       notes: notes.map((n, noteIndex) => ({
         note_id: `v${index}_n${noteIndex}`,
         midi: n.midi,
         is_rest: !!n.is_rest,
+        start_eighths: n.start_quarters * 2,
+        spelling_m21: n.spelling_m21 ?? null,
+        spelling_midi: n.spelling_m21 ? n.midi : null,
         duration_eighths: n.duration_eighths,
         tie_start: n.tie_start,
         tie_end: n.tie_end,
       })),
     };
   });
+  const fullMeasureEighths = (beats * 8) / Math.max(1, beatType);
+  const pickupCandidate =
+    firstMeasureSpanQuarters > 0
+      ? normalizeDurationEighths(firstMeasureSpanQuarters * 2, null)
+      : null;
+  const pickupEighths =
+    Number.isFinite(pickupCandidate) &&
+    pickupCandidate > EIGHTH_EPS &&
+    pickupCandidate < fullMeasureEighths - EIGHTH_EPS
+      ? pickupCandidate
+      : null;
 
   return {
     preset_id: fallbackPresetId,
@@ -290,6 +417,7 @@ export function importMusicXml(xmlText, opts = {}) {
       numerator: beats,
       denominator: beatType,
     },
+    pickup_eighths: pickupEighths,
     voices,
   };
 }
@@ -337,7 +465,10 @@ export function exportMusicXml(state) {
       };
 
       for (const note of voice.notes) {
-        const durationUnits = Math.max(1, Math.round((note.duration_eighths * divisions) / 2));
+        const durationUnits = Math.max(
+          1,
+          Math.round((normalizeDurationEighths(note.duration_eighths, 1) * divisions) / 2),
+        );
         if (usedUnits + durationUnits > measureUnits && currentMeasure.length > 0) {
           pushMeasure();
         }

@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "source_id": "pickup_anacrusis",
+  "measure_number_shift": 1,
+  "slices": [
+    {
+      "index": 0,
+      "start_div": 0,
+      "end_div": 1,
+      "measure_number": 0,
+      "notes": [
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "G4",
+          "midi": 67,
+          "onset": true,
+          "hold": false,
+          "tie_start": false,
+          "tie_stop": false,
+          "interval_from_bass": "P1"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "start_div": 1,
+      "end_div": 3,
+      "measure_number": 1,
+      "notes": [
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "C4",
+          "midi": 60,
+          "onset": true,
+          "hold": false,
+          "tie_start": false,
+          "tie_stop": false,
+          "interval_from_bass": "P1"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "start_div": 3,
+      "end_div": 5,
+      "measure_number": 1,
+      "notes": [
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "E4",
+          "midi": 64,
+          "onset": true,
+          "hold": false,
+          "tie_start": false,
+          "tie_stop": false,
+          "interval_from_bass": "P1"
+        }
+      ]
+    }
+  ]
+}

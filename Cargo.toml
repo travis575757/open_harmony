@@ -5,6 +5,7 @@ members = [
   "crates/cp_harmony",
   "crates/cp_engine",
   "crates/cp_io",
+  "crates/cp_music21_compat",
   "crates/cp_wasm",
 ]
 resolver = "2"

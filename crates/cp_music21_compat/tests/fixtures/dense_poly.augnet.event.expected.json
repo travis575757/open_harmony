@@ -1,0 +1,34 @@
+[
+  {
+    "s_offset": 0.0,
+    "s_duration": 2.0,
+    "s_measure": 1,
+    "s_notes": [
+      "G3",
+      "C4"
+    ],
+    "s_intervals": [
+      "P4"
+    ],
+    "s_is_onset": [
+      true,
+      true
+    ]
+  },
+  {
+    "s_offset": 2.0,
+    "s_duration": 2.0,
+    "s_measure": 1,
+    "s_notes": [
+      "G3",
+      "E4"
+    ],
+    "s_intervals": [
+      "M6"
+    ],
+    "s_is_onset": [
+      false,
+      true
+    ]
+  }
+]

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "source_id": "enharmonic_double",
+  "measure_number_shift": 0,
+  "slices": [
+    {
+      "index": 0,
+      "start_div": 0,
+      "end_div": 4,
+      "measure_number": 1,
+      "notes": [
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "C4",
+          "midi": 60,
+          "onset": true,
+          "hold": false,
+          "tie_start": false,
+          "tie_stop": false,
+          "interval_from_bass": "P1"
+        },
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "E--4",
+          "midi": 62,
+          "onset": true,
+          "hold": false,
+          "tie_start": false,
+          "tie_stop": false,
+          "interval_from_bass": "d3"
+        },
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "G-4",
+          "midi": 66,
+          "onset": true,
+          "hold": false,
+          "tie_start": false,
+          "tie_stop": false,
+          "interval_from_bass": "d5"
+        },
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "F##4",
+          "midi": 67,
+          "onset": true,
+          "hold": false,
+          "tie_start": false,
+          "tie_stop": false,
+          "interval_from_bass": "AA4"
+        }
+      ]
+    }
+  ]
+}

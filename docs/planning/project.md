@@ -1,18 +1,19 @@
-# Project Plan: Counterpoint Analyzer Platform (Rules Corpus -> Rust Engine -> Web Editor -> MIDI Decomposer -> ReaImGui)
+# Project Plan: Counterpoint Analyzer Platform (Rules Corpus -> Rust Engine -> Web Editor -> AugmentedNet ONNX -> MIDI Decomposer -> ReaImGui)
 
 ## Summary
-Build the project in five dependency-ordered tracks:
+Build the project in six dependency-ordered tracks:
 
 1. Canonical rule corpus extraction and normalization from current docs.
 2. Rust analysis engine (Phase 1) with rule toggles, presets, and robust diagnostics.
 3. Educational web editor/viewer (abcjs-based) backed by Rust/WASM engine.
-4. Phase 2 MIDI decomposer and multistage analysis pipeline.
-5. ReaImGui integration for Reaper (overlay + diagnostics panel).
+4. AugmentedNet ONNX port and Rust-native integration (`tf2onnx` + `ort`).
+5. Phase 2 MIDI decomposer and multistage analysis pipeline.
+6. ReaImGui integration for Reaper (overlay + diagnostics panel).
 
 Chosen defaults:
 - Rule authority: AiHarmony-first (`docs/demos/AiHarmony/*`) with research docs as commentary/cross-check.
 - Web stack: static SPA + TypeScript + abcjs + Rust/WASM.
-- Delivery order: Rules doc -> Engine -> Web -> MIDI -> ReaImGui.
+- Delivery order: Rules doc -> Engine -> Web -> AugmentedNet ONNX -> MIDI -> ReaImGui.
 
 ## Public APIs / Interfaces / Types (Planned Additions)
 - `RuleId`: stable string ID (example: `sp1.parallel_perfects`, `gen.voice_crossing`).
@@ -137,7 +138,31 @@ Chosen defaults:
 - Exact UX for conflicting edits (drag action that violates duration/species constraints).
 - Whether harmonic annotations (Roman numerals) appear by default or toggle-only in initial release.
 
-## Task 4: Phase 2 MIDI Decomposer + Multistage Analyzer
+## Task 4: AugmentedNet ONNX Port + Integration
+### Deliverables
+- ONNX conversion pipeline for AugmentedNet model (`.hdf5` -> `.onnx`) with reproducible tooling.
+- Native Rust backend using ONNX Runtime (`ort`) with CPU execution provider.
+- Exact parity preprocessing/postprocessing modules and backend selector integration (`rule_based`, `augnet_onnx`, `hybrid`).
+- Corpus parity and regression test harness (Python AugmentedNet baseline + When-in-Rome evaluation).
+- Detailed implementation plan reference: `docs/planning/augnet-onnx-port-plan.md`.
+
+### Requirements (In-depth)
+- Support all AugmentedNet heads and expose raw logits.
+- Fixed sequence length (`T`) parity mode only for this phase.
+- Exact preprocessing parity with canonical AugmentedNet behavior (no deviations in parity mode).
+- Exact postprocessing parity for RN/chord reconstruction, inversion logic, and tonicization semantics.
+- Hybrid mode must retain source attribution and emit disagreement diagnostics instead of silent resolution.
+
+### Tests / Acceptance Criteria
+- Deterministic fixture parity mismatch rate is 0.
+- Corpus parity mismatch rate (Rust ONNX vs Python AugmentedNet baseline) is <= 0.1%.
+- Musical evaluation metrics remain within 0.25 percentage points of Python baseline on configured corpus metrics.
+- Integration tests pass for `rule_based`, `augnet_onnx`, and `hybrid` backend modes.
+
+### Open Questions
+- None at project-plan level; unresolved implementation details are tracked and finalized in `docs/planning/augnet-onnx-port-plan.md`.
+
+## Task 5: Phase 2 MIDI Decomposer + Multistage Analyzer
 ### Deliverables
 - `cp_decompose` module with staged pipeline:
   1. quantization/alignment
@@ -164,7 +189,7 @@ Chosen defaults:
 - Ground-truth corpus source and labeling workflow for decomposition evaluation.
 - Whether Phase 2 ships with hard auto-assignment or assisted decomposition mode first.
 
-## Task 5: ReaImGui + Reaper Integration
+## Task 6: ReaImGui + Reaper Integration
 ### Deliverables
 - ReaScript (Lua) plugin entrypoint for selected MIDI take analysis.
 - Rust shared library wrapper target for Reaper-supported OSes.
@@ -191,8 +216,9 @@ Chosen defaults:
 ## Cross-Task Dependencies and Decision Gates
 - Gate A (after Task 1): canonical rule schema signed off; no engine implementation before this.
 - Gate B (after Task 2 core): schema freeze for diagnostics before full web UI integration.
-- Gate C (after Task 3): finalize user-driven correction flows before Phase 2 decomposition integration.
-- Gate D (before Task 5): lock shared-library ABI and JSON contract.
+- Gate C (after Task 3): finalize user-driven correction flows before AugmentedNet backend integration in UI/API.
+- Gate D (after Task 4): freeze harmonic backend contract and parity baselines before Phase 2 decomposition integration.
+- Gate E (before Task 6): lock shared-library ABI and JSON contract.
 
 ## Investigation Work Required Before Execution (Explicit)
 - Parse and map AiHarmony rule IDs/paragraph links into stable `RuleId` taxonomy.

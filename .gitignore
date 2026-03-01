@@ -1,5 +1,37 @@
-tags
-tags.temp
-tags.lock
-target
-Cargo.lock
+# Rust build artifacts
+/target/
+
+# Local editor/index artifacts
+/tags
+/tags.temp
+/tags.lock
+
+# Python caches and virtual environments
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.venv/
+.venv*/
+
+# Generated model binaries (download/convert locally)
+models/augnet/*.onnx
+models/augnet/**/*.onnx
+models/augnet/*.h5
+models/augnet/**/*.h5
+models/augnet/*.hdf5
+models/augnet/**/*.hdf5
+
+# Generated parity artifacts
+tests/augnet_parity/last_diff_report.json
+
+# Generated wasm-pack output
+crates/cp_wasm/pkg/
+crates/cp_wasm/pkg-node/
+
+# Web editor local dependencies
+web/editor/node_modules/
+
+# Local scratch/debug exports
+web/editor/mozart_k330_2_*

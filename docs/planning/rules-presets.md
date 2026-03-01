@@ -12,6 +12,8 @@ Machine-readable source of truth: `docs/planning/rules-presets.json`.
 - `species4`
 - `species5`
 - `general_voice_leading`
+- `moderate_classical`
+- `relaxed`
 - `custom`
 
 ## Mode Guide Docs
@@ -51,6 +53,8 @@ Machine-readable source of truth: `docs/planning/rules-presets.json`.
 - `species4`: `core_general_rules` + `species4_rules`
 - `species5`: `core_general_rules` + `species5_rules`
 - `general_voice_leading`: `core_general_rules` + `tonal_general_rules` (with explicit exclusions/overrides)
+- `moderate_classical`: tonal + core rule set with relaxed upper-adjacent spacing (tenth) and selected strictness overrides
+- `relaxed`: reduced core subset with relaxed thresholds for motion/spacing heuristics
 - `custom`: no fixed groups; runtime selected rules
 
 ## Severity Defaults by Preset

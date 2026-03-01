@@ -49,6 +49,18 @@ test("parse and serialize rests", () => {
   assert.match(txt, /^C4 z2 D2 z4$/);
 });
 
+test("supports fractional durations down to 32nd notes", () => {
+  const parsed = parseVoiceText("C/4 D/2 E1 F3/2", { defaultDurationEighths: 1 });
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(parsed.notes.length, 4);
+  assert.equal(parsed.notes[0].duration_eighths, 0.25);
+  assert.equal(parsed.notes[1].duration_eighths, 0.5);
+  assert.equal(parsed.notes[2].duration_eighths, 1);
+  assert.equal(parsed.notes[3].duration_eighths, 1.5);
+  const txt = notesToVoiceText(parsed.notes, 1);
+  assert.match(txt, /^C\/4 D\/2 E1 F3\/2$/);
+});
+
 test("notes to text and ABC build produce staff blocks", () => {
   const voice0 = {
     voice_index: 0,
@@ -80,6 +92,7 @@ test("notes to text and ABC build produce staff blocks", () => {
 
   assert.match(abc, /V:1 clef=treble/);
   assert.match(abc, /V:2 clef=bass/);
+  assert.match(abc, /%%score \(1\) \(2\)/);
   assert.match(abc, /K:C/);
 });
 
@@ -102,6 +115,71 @@ test("meter fit reports overfill and renderer inserts bar before overflow", () =
     showBarNumbers: false,
   });
   assert.match(abc, /C6 \| D6/);
+});
+
+test("buildAbcFromVoices preserves explicit starts with leading rests", () => {
+  const soprano = {
+    voice_index: 0,
+    name: "Soprano",
+    notes: [
+      { midi: 72, is_rest: false, duration_eighths: 2, start_eighths: 0, tie_start: false },
+      { midi: 74, is_rest: false, duration_eighths: 2, start_eighths: 2, tie_start: false },
+    ],
+  };
+  const bass = {
+    voice_index: 1,
+    name: "Bass",
+    notes: [{ midi: 48, is_rest: false, duration_eighths: 2, start_eighths: 2, tie_start: false }],
+  };
+  const abc = buildAbcFromVoices({
+    voices: [soprano, bass],
+    presetId: "general_voice_leading",
+    keyLabel: "C",
+    timeSignature: { numerator: 4, denominator: 4 },
+    showBarNumbers: false,
+  });
+  assert.match(abc, /V:2 clef=bass name="Bass"\nz2 C,2/);
+});
+
+test("buildAbcFromVoices respects pickup length and splits leading rests across pickup bar", () => {
+  const v1 = {
+    voice_index: 0,
+    name: "V1",
+    notes: [{ midi: 72, is_rest: false, duration_eighths: 1, start_eighths: 0, tie_start: false }],
+  };
+  const v2 = {
+    voice_index: 1,
+    name: "V2",
+    notes: [{ midi: 48, is_rest: false, duration_eighths: 2, start_eighths: 4, tie_start: false }],
+  };
+  const abc = buildAbcFromVoices({
+    voices: [v1, v2],
+    presetId: "general_voice_leading",
+    keyLabel: "F",
+    timeSignature: { numerator: 3, denominator: 4 },
+    pickupEighths: 1,
+    showBarNumbers: false,
+  });
+  assert.match(abc, /V:2 clef=bass name="V2"\nz1 \| z3 C,2/);
+});
+
+test("buildAbcFromVoices groups same-start notes into chords", () => {
+  const voice = {
+    voice_index: 0,
+    name: "V1",
+    notes: [
+      { midi: 60, is_rest: false, duration_eighths: 4, start_eighths: 0, tie_start: false },
+      { midi: 64, is_rest: false, duration_eighths: 4, start_eighths: 0, tie_start: false },
+    ],
+  };
+  const abc = buildAbcFromVoices({
+    voices: [voice],
+    presetId: "general_voice_leading",
+    keyLabel: "C",
+    timeSignature: { numerator: 4, denominator: 4 },
+    showBarNumbers: false,
+  });
+  assert.match(abc, /\[CE\]4/);
 });
 
 test("bar number directive toggles", () => {

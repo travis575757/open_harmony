@@ -7,12 +7,14 @@ edition.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cp_engine = { path = "../cp_engine" }
+cp_engine = { path = "../cp_engine", default-features = false }
 cp_core = { path = "../cp_core" }
 cp_io = { path = "../cp_io" }
+cp_music21_compat = { path = "../cp_music21_compat" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+musicxml = "1.1.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

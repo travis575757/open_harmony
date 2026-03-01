@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "tied_barlines",
+      "musicxml_path": "tests/music21_compat/fixtures/tied_barlines.musicxml",
+      "tags": [
+        "ties"
+      ]
+    },
+    {
+      "id": "pickup_anacrusis",
+      "musicxml_path": "tests/music21_compat/fixtures/pickup_anacrusis.musicxml",
+      "tags": [
+        "anacrusis"
+      ]
+    },
+    {
+      "id": "enharmonic_double",
+      "musicxml_path": "tests/music21_compat/fixtures/enharmonic_double.musicxml",
+      "tags": [
+        "enharmonic"
+      ]
+    },
+    {
+      "id": "dense_poly",
+      "musicxml_path": "tests/music21_compat/fixtures/dense_poly.musicxml",
+      "tags": [
+        "dense_poly"
+      ]
+    },
+    {
+      "id": "chunk_boundary",
+      "musicxml_path": "tests/music21_compat/fixtures/chunk_boundary.musicxml",
+      "tags": [
+        "chunk_boundary"
+      ]
+    }
+  ]
+}

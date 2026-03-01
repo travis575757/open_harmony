@@ -149,7 +149,13 @@ export function drawDiagnosticsOverlay(svg, diagnostics, centers, opts = {}) {
     const a = centers.get(diag.primary.note_id);
     if (!a) continue;
 
-    const circleClass = diag.severity === "warning" ? "overlay-circle-warning" : "overlay-circle-error";
+    const circleClass =
+      diag.severity === "warning"
+        ? "overlay-circle-warning"
+        : diag.severity === "info"
+          ? "overlay-circle-info"
+          : "overlay-circle-error";
+    const lineClass = diag.severity === "info" ? "overlay-line-info" : "overlay-line";
     const isSelected = diagIndex === selectedDiagnosticIndex;
     layer.appendChild(
       createSvgElement("circle", {
@@ -179,7 +185,7 @@ export function drawDiagnosticsOverlay(svg, diagnostics, centers, opts = {}) {
             y1: a.y,
             x2: b.x,
             y2: b.y,
-            class: `overlay-line${isSelected ? " overlay-line-selected" : ""}`,
+            class: `${lineClass}${isSelected ? " overlay-line-selected" : ""}`,
           }),
         );
       }
@@ -207,20 +213,12 @@ export function drawRomanOverlay(svg, anchors) {
   if (!Array.isArray(anchors) || anchors.length === 0) return;
   const layer = ensureOverlayLayer(svg);
   const rows = detectStaffRows(svg);
-  let yMax = Number.POSITIVE_INFINITY;
-  const vb = svg.viewBox?.baseVal;
-  if (vb && Number.isFinite(vb.y) && Number.isFinite(vb.height) && vb.height > 0) {
-    yMax = vb.y + vb.height - 6;
-  } else {
-    const bb = svg.getBBox();
-    yMax = bb.y + bb.height - 6;
-  }
   for (const anchor of anchors) {
     if (!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.sourceY) || !anchor.label) {
       continue;
     }
     const row = pickStaffRow(rows, anchor.x, anchor.sourceY);
-    const y = Math.min(row ? row.bottom + 14 : anchor.sourceY + 14, yMax);
+    const y = row ? row.bottom + 14 : anchor.sourceY + 14;
     const text = createSvgElement("text", {
       x: anchor.x,
       y,
@@ -246,48 +244,110 @@ function detectStaffRows(svg) {
     .map((el) => {
       const rect = el.getBoundingClientRect();
       if (rect.width < 40 || rect.height <= 0.2) return null;
-      const left = pointFromClient(svg, rect.left, rect.top);
-      const right = pointFromClient(svg, rect.right, rect.top);
-      const bottom = pointFromClient(svg, rect.left, rect.bottom);
-      if (!left || !right || !bottom) return null;
+      const leftTop = pointFromClient(svg, rect.left, rect.top);
+      const rightTop = pointFromClient(svg, rect.right, rect.top);
+      const leftBottom = pointFromClient(svg, rect.left, rect.bottom);
+      if (!leftTop || !rightTop || !leftBottom) return null;
       return {
-        left: Math.min(left.x, right.x),
-        right: Math.max(left.x, right.x),
-        bottom: bottom.y,
+        left: Math.min(leftTop.x, rightTop.x),
+        right: Math.max(leftTop.x, rightTop.x),
+        top: Math.min(leftTop.y, leftBottom.y),
+        bottom: Math.max(leftTop.y, leftBottom.y),
       };
     })
     .filter(Boolean);
+  return groupStaffRowsBySystem(candidates);
+}
 
+function median(values) {
+  if (!values || values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  return sorted[mid];
+}
+
+function lineGap(a, b) {
+  if (b.top > a.bottom) return b.top - a.bottom;
+  if (a.top > b.bottom) return a.top - b.bottom;
+  return 0;
+}
+
+function groupStaffRowsBySystem(candidates) {
   const rows = [];
-  for (const c of candidates) {
+  const ordered = [...candidates].sort((a, b) => a.top - b.top);
+  for (const c of ordered) {
+    const centerY = (c.top + c.bottom) / 2;
     let matched = null;
+    let bestGap = Number.POSITIVE_INFINITY;
     for (const row of rows) {
-      if (Math.abs(row.left - c.left) < 10 && Math.abs(row.right - c.right) < 24) {
+      const horizontalMatch = Math.abs(row.left - c.left) < 10 && Math.abs(row.right - c.right) < 24;
+      if (!horizontalMatch) continue;
+      const gap = lineGap(row, c);
+      if (gap <= 14 && gap < bestGap) {
         matched = row;
-        break;
+        bestGap = gap;
       }
     }
     if (matched) {
       matched.left = Math.min(matched.left, c.left);
       matched.right = Math.max(matched.right, c.right);
+      matched.top = Math.min(matched.top, c.top);
       matched.bottom = Math.max(matched.bottom, c.bottom);
+      matched.centerY = (matched.top + matched.bottom) / 2;
     } else {
-      rows.push({ ...c });
+      rows.push({
+        left: c.left,
+        right: c.right,
+        top: c.top,
+        bottom: c.bottom,
+        centerY,
+        systemIndex: 0,
+      });
     }
   }
+  rows.sort((a, b) => a.centerY - b.centerY);
+  if (rows.length <= 1) return rows;
+
+  const gaps = [];
+  for (let i = 1; i < rows.length; i += 1) {
+    gaps.push(rows[i].centerY - rows[i - 1].centerY);
+  }
+  const systemBreakGap = Math.min(90, Math.max(32, median(gaps) * 1.6));
+  let systemIndex = 0;
+  rows[0].systemIndex = systemIndex;
+  for (let i = 1; i < rows.length; i += 1) {
+    if (rows[i].centerY - rows[i - 1].centerY > systemBreakGap) {
+      systemIndex += 1;
+    }
+    rows[i].systemIndex = systemIndex;
+  }
+
   return rows;
 }
 
 function pickStaffRow(rows, x, sourceY) {
   if (!rows || rows.length === 0) return null;
-  let best = null;
-  let bestScore = Number.POSITIVE_INFINITY;
+  let nearest = null;
+  let nearestScore = Number.POSITIVE_INFINITY;
   for (const row of rows) {
+    const dy = Math.abs((row.centerY ?? row.bottom) - sourceY);
+    // Prefer rows that also span the anchor X, but never require it.
     const inX = x >= row.left - 8 && x <= row.right + 8;
-    if (!inX) continue;
-    const dy = Math.abs(row.bottom - sourceY);
-    if (dy < bestScore) {
-      bestScore = dy;
+    const score = dy + (inX ? 0 : 24);
+    if (score < nearestScore) {
+      nearestScore = score;
+      nearest = row;
+    }
+  }
+  if (!nearest) return null;
+
+  const systemRows = rows.filter((row) => row.systemIndex === nearest.systemIndex);
+  let best = systemRows[0] ?? nearest;
+  for (const row of systemRows) {
+    if (row.bottom > best.bottom) {
       best = row;
     }
   }

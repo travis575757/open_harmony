@@ -1,4 +1,8 @@
-import { speciesDefaultDurationEighths } from "./abcNotation.js";
+import { normalizeDurationEighths, speciesDefaultDurationEighths } from "./abcNotation.js";
+import {
+  buildHarmonicRhythmConfig,
+  normalizeAnalysisBackend,
+} from "./analysisMode.js";
 
 const TPQ = 480;
 
@@ -60,27 +64,44 @@ export function normalizeVoiceIds(voices) {
 }
 
 function voicesToEngine(voices) {
-  return voices.map((voice) => {
+  const augnetNoteSpellings = {};
+  const engineVoices = voices.map((voice) => {
     let cursorTick = 0;
     const notes = [];
     for (const note of voice.notes) {
-      const durationTicks = Math.max(1, note.duration_eighths * (TPQ / 2));
+      const normalizedDuration = normalizeDurationEighths(note.duration_eighths, 1);
+      const durationTicks = Math.max(1, Math.round(normalizedDuration * (TPQ / 2)));
+      const explicitStartEighths = Number(note.start_eighths);
+      const hasExplicitStart = Number.isFinite(explicitStartEighths) && explicitStartEighths >= 0;
+      const startTick = hasExplicitStart
+        ? Math.max(0, Math.round(explicitStartEighths * (TPQ / 2)))
+        : cursorTick;
       if (note.is_rest || !Number.isFinite(note.midi)) {
-        cursorTick += durationTicks;
+        cursorTick = Math.max(cursorTick, startTick + durationTicks);
         continue;
       }
       const out = {
         note_id: note.note_id,
         voice_index: voice.voice_index,
         midi: note.midi,
-        start_tick: cursorTick,
+        start_tick: startTick,
         duration_ticks: durationTicks,
         tie_start: !!note.tie_start,
         tie_end: !!note.tie_end,
       };
-      cursorTick += durationTicks;
       notes.push(out);
+      const spellingMidi = Number(note.spelling_midi);
+      const spellingM21 = typeof note.spelling_m21 === "string" ? note.spelling_m21.trim() : "";
+      if (
+        spellingM21 &&
+        Number.isFinite(spellingMidi) &&
+        spellingMidi === note.midi
+      ) {
+        augnetNoteSpellings[note.note_id] = spellingM21;
+      }
+      cursorTick = Math.max(cursorTick, startTick + durationTicks);
     }
+    notes.sort((a, b) => a.start_tick - b.start_tick || a.note_id.localeCompare(b.note_id));
 
     return {
       voice_index: voice.voice_index,
@@ -88,10 +109,17 @@ function voicesToEngine(voices) {
       notes,
     };
   });
+
+  return {
+    voices: engineVoices,
+    augnetNoteSpellings,
+  };
 }
 
 export function buildAnalysisRequest(state, resolvedRuleSet) {
-  return {
+  const analysisBackend = normalizeAnalysisBackend(state.analysis_backend);
+  const voicePayload = voicesToEngine(state.voices);
+  const request = {
     score: {
       meta: {
         exercise_count: 1,
@@ -105,7 +133,7 @@ export function buildAnalysisRequest(state, resolvedRuleSet) {
         },
         ticks_per_quarter: TPQ,
       },
-      voices: voicesToEngine(state.voices),
+      voices: voicePayload.voices,
     },
     config: {
       preset_id: state.preset_id,
@@ -113,12 +141,21 @@ export function buildAnalysisRequest(state, resolvedRuleSet) {
       disabled_rule_ids: resolvedRuleSet.disabled_rule_ids,
       severity_overrides: resolvedRuleSet.severity_overrides,
       rule_params: resolvedRuleSet.rule_params,
-      harmonic_rhythm: {
-        mode: "fixed_per_bar",
-        chords_per_bar: 1,
-      },
+      rule_checker_enabled: state.rule_checker_enabled !== false,
+      analysis_backend: analysisBackend,
+      harmonic_rhythm: buildHarmonicRhythmConfig(
+        analysisBackend,
+        state.rule_harmonic_rhythm_chords_per_bar,
+      ),
     },
   };
+  if (Object.keys(voicePayload.augnetNoteSpellings).length > 0) {
+    request.augnet_note_spellings = voicePayload.augnetNoteSpellings;
+  }
+  if (typeof state.source_musicxml_raw === "string" && state.source_musicxml_raw.trim()) {
+    request.augnet_source_musicxml = state.source_musicxml_raw;
+  }
+  return request;
 }
 
 export function noteIndexMap(voices) {

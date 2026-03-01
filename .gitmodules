@@ -1,3 +1,6 @@
 [submodule "docs/demos/AiHarmony"]
 	path = docs/demos/AiHarmony
 	url = https://github.com/rualark/AiHarmony
+[submodule "tests/corpora/When-in-Rome"]
+	path = tests/corpora/When-in-Rome
+	url = https://github.com/MarkGotham/When-in-Rome.git

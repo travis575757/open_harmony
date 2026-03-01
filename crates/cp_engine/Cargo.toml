@@ -3,15 +3,24 @@ name = "cp_engine"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["augnet_onnx_backend"]
+augnet_onnx_backend = ["dep:ort", "dep:ndarray", "dep:sha2"]
+
 [dependencies]
 cp_core = { path = "../cp_core" }
 cp_rules = { path = "../cp_rules" }
 cp_harmony = { path = "../cp_harmony" }
+cp_music21_compat = { path = "../cp_music21_compat" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 indexmap.workspace = true
 anyhow.workspace = true
+ort = { git = "https://github.com/pykeio/ort.git", tag = "v1.16.3", default-features = false, features = ["download-binaries", "copy-dylibs"], optional = true }
+ndarray = { version = "0.15", optional = true }
+sha2 = { version = "0.10", optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
+tempfile = "3"

@@ -129,6 +129,35 @@ impl Default for ConsecutiveLargeLeapParams {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct UpperAdjacentSpacingParams {
+    max_semitones: i16,
+    exclude_lowest_adjacent_pair: bool,
+}
+
+impl Default for UpperAdjacentSpacingParams {
+    fn default() -> Self {
+        Self {
+            max_semitones: 12,
+            // Preserve the existing behavior for current presets.
+            exclude_lowest_adjacent_pair: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct ConsecutiveParallelImperfectParams {
+    max_consecutive: u8,
+}
+
+impl Default for ConsecutiveParallelImperfectParams {
+    fn default() -> Self {
+        Self { max_consecutive: 3 }
+    }
+}
+
 fn parse_rule_params<T: DeserializeOwned>(
     rule_id: &str,
     value: &Value,
@@ -272,6 +301,38 @@ fn validate_consecutive_leap_params(
     Vec::new()
 }
 
+fn validate_upper_adjacent_spacing_params(
+    rule_id: &str,
+    p: &UpperAdjacentSpacingParams,
+) -> Vec<RuleParamIssue> {
+    if p.max_semitones <= 0 {
+        return vec![RuleParamIssue::new(
+            rule_id,
+            "max_semitones",
+            "out_of_range",
+            "value >= 1",
+            Some(p.max_semitones.to_string()),
+        )];
+    }
+    Vec::new()
+}
+
+fn validate_parallel_imperfect_params(
+    rule_id: &str,
+    p: &ConsecutiveParallelImperfectParams,
+) -> Vec<RuleParamIssue> {
+    if p.max_consecutive < 2 {
+        return vec![RuleParamIssue::new(
+            rule_id,
+            "max_consecutive",
+            "out_of_range",
+            "value >= 2",
+            Some(p.max_consecutive.to_string()),
+        )];
+    }
+    Vec::new()
+}
+
 pub fn validate_rule_params<'a, I>(
     active_rule_ids: I,
     rule_params: &BTreeMap<RuleId, Value>,
@@ -322,6 +383,28 @@ where
                     "object {large_leap_min_semitones,same_direction_only}",
                 ) {
                     Ok(p) => issues.extend(validate_consecutive_leap_params(rule_id, &p)),
+                    Err(i) => issues.push(i),
+                }
+            }
+            "gen.spacing.upper_adjacent_max_octave" => {
+                match parse_rule_params::<UpperAdjacentSpacingParams>(
+                    rule_id,
+                    value,
+                    "object {max_semitones,exclude_lowest_adjacent_pair}",
+                ) {
+                    Ok(p) => {
+                        issues.extend(validate_upper_adjacent_spacing_params(rule_id, &p))
+                    }
+                    Err(i) => issues.push(i),
+                }
+            }
+            "gen.motion.consecutive_parallel_imperfects_limited" => {
+                match parse_rule_params::<ConsecutiveParallelImperfectParams>(
+                    rule_id,
+                    value,
+                    "object {max_consecutive}",
+                ) {
+                    Ok(p) => issues.extend(validate_parallel_imperfect_params(rule_id, &p)),
                     Err(i) => issues.push(i),
                 }
             }
@@ -602,6 +685,8 @@ fn r_gen_input_species_supported(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnosti
             | PresetId::Species4
             | PresetId::Species5
             | PresetId::GeneralVoiceLeading
+            | PresetId::ModerateClassical
+            | PresetId::Relaxed
             | PresetId::Custom
     ) {
         return Vec::new();
@@ -767,7 +852,9 @@ fn imperfect_generic_class(pc: u8) -> Option<u8> {
 }
 
 fn r_consecutive_parallel_imperfects(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
-    const MAX_CONSECUTIVE: usize = 3;
+    let params: ConsecutiveParallelImperfectParams =
+        rule_params_or_default(ctx, "gen.motion.consecutive_parallel_imperfects_limited");
+    let max_consecutive = params.max_consecutive as usize;
 
     let mut out = Vec::new();
     for i in 0..ctx.score.voices.len() {
@@ -814,18 +901,20 @@ fn r_consecutive_parallel_imperfects(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagn
                     run_flagged = false;
                 }
 
-                if run_len > MAX_CONSECUTIVE && !run_flagged {
+                if run_len > max_consecutive && !run_flagged {
                     let mut d = diag(
                         "gen.motion.consecutive_parallel_imperfects_limited",
                         Severity::Error,
-                        "more than 3 consecutive parallel thirds/sixths",
+                        "too many consecutive parallel thirds/sixths",
                         ctx.score,
                         now_a,
                         Some(now_b),
                     );
                     d.context.insert("pair".to_string(), format!("{}-{}", i, j));
-                    d.context.insert("run_length".to_string(), run_len.to_string());
-                    d.context.insert("max".to_string(), MAX_CONSECUTIVE.to_string());
+                    d.context
+                        .insert("run_length".to_string(), run_len.to_string());
+                    d.context
+                        .insert("max".to_string(), max_consecutive.to_string());
                     d.context
                         .insert("generic_interval".to_string(), cls.to_string());
                     out.push(d);
@@ -838,7 +927,10 @@ fn r_consecutive_parallel_imperfects(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagn
 }
 
 fn r_spacing_upper_octave(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
+    let params: UpperAdjacentSpacingParams =
+        rule_params_or_default(ctx, "gen.spacing.upper_adjacent_max_octave");
     let mut out = Vec::new();
+    let voice_count = ctx.score.voices.len();
     for tick in all_start_ticks(ctx.score) {
         for i in 0..ctx.score.voices.len().saturating_sub(1) {
             let Some(na) = active_note_at(&ctx.score.voices[i].notes, tick) else {
@@ -847,11 +939,17 @@ fn r_spacing_upper_octave(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
             let Some(nb) = active_note_at(&ctx.score.voices[i + 1].notes, tick) else {
                 continue;
             };
-            if i + 1 < 3 && (na.midi - nb.midi).abs() > 12 {
+            let check_pair = if params.exclude_lowest_adjacent_pair {
+                i < voice_count.saturating_sub(2)
+            } else {
+                // Legacy behavior used by existing shipped presets.
+                i + 1 < 3
+            };
+            if check_pair && (na.midi - nb.midi).abs() > params.max_semitones {
                 out.push(diag(
                     "gen.spacing.upper_adjacent_max_octave",
                     Severity::Warning,
-                    "adjacent upper voices exceed octave spacing",
+                    "adjacent upper voices exceed configured spacing",
                     ctx.score,
                     na,
                     Some(nb),
@@ -1576,11 +1674,8 @@ fn r_clausula_vera(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
 
     let dcp = cp_last.midi - cp_prev.midi;
     let dcf = cf_last.midi - cf_prev.midi;
-    let contrary_stepwise = dcp != 0
-        && dcf != 0
-        && dcp.abs() <= 2
-        && dcf.abs() <= 2
-        && dcp.signum() != dcf.signum();
+    let contrary_stepwise =
+        dcp != 0 && dcf != 0 && dcp.abs() <= 2 && dcf.abs() <= 2 && dcp.signum() != dcf.signum();
 
     let expected_formula = if cf_prev_pc == (tonic + 2) % 12 {
         cp_prev_pc == (tonic + 11) % 12
@@ -1604,16 +1699,16 @@ fn r_clausula_vera(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
     );
     d.context
         .insert("final_is_perfect".to_string(), final_is_perfect.to_string());
-    d.context
-        .insert("cp_final_is_tonic".to_string(), cp_final_is_tonic.to_string());
+    d.context.insert(
+        "cp_final_is_tonic".to_string(),
+        cp_final_is_tonic.to_string(),
+    );
     d.context.insert(
         "contrary_stepwise_approach".to_string(),
         contrary_stepwise.to_string(),
     );
-    d.context.insert(
-        "formula_match".to_string(),
-        expected_formula.to_string(),
-    );
+    d.context
+        .insert("formula_match".to_string(), expected_formula.to_string());
     vec![d]
 }
 
@@ -1668,7 +1763,11 @@ fn r_climax_non_coincident(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnostic> {
             let highs_j: Vec<&NoteEvent> = vj.notes.iter().filter(|n| n.midi == max_j).collect();
             let mut hit: Option<(&NoteEvent, &NoteEvent)> = None;
             for ni in &highs_i {
-                if let Some(nj) = highs_j.iter().copied().find(|nj| nj.start_tick == ni.start_tick) {
+                if let Some(nj) = highs_j
+                    .iter()
+                    .copied()
+                    .find(|nj| nj.start_tick == ni.start_tick)
+                {
                     hit = Some((ni, nj));
                     break;
                 }
@@ -2477,8 +2576,7 @@ fn r_sp4_strict_entry_exit_profile(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagnos
         cp_last,
         Some(cf_last),
     );
-    d.context
-        .insert("reasons".to_string(), reasons.join("; "));
+    d.context.insert("reasons".to_string(), reasons.join("; "));
     vec![d]
 }
 
@@ -2673,7 +2771,8 @@ fn r_sp4_suspension_density_minimum(ctx: &RuleContext<'_>) -> Vec<AnalysisDiagno
         note,
         None,
     );
-    d.context.insert("density".to_string(), format!("{:.3}", density));
+    d.context
+        .insert("density".to_string(), format!("{:.3}", density));
     d.context
         .insert("dissonant".to_string(), dissonant.to_string());
     d.context
@@ -3395,7 +3494,11 @@ mod tests {
             rule_params: &params,
         };
         let d = r_sp2_rhythm(&ctx);
-        assert!(d.is_empty(), "expected cadential long-note exception, got: {:?}", d);
+        assert!(
+            d.is_empty(),
+            "expected cadential long-note exception, got: {:?}",
+            d
+        );
     }
 
     #[test]
@@ -3442,7 +3545,11 @@ mod tests {
             rule_params: &params,
         };
         let d = r_sp3_rhythm(&ctx);
-        assert!(d.is_empty(), "expected cadential long-note exception, got: {:?}", d);
+        assert!(
+            d.is_empty(),
+            "expected cadential long-note exception, got: {:?}",
+            d
+        );
     }
 
     #[test]
@@ -3467,7 +3574,11 @@ mod tests {
             rule_params: &params,
         };
         let d = r_sp3_rhythm(&ctx);
-        assert!(d.is_empty(), "expected terminal rhythm variation allowance, got: {:?}", d);
+        assert!(
+            d.is_empty(),
+            "expected terminal rhythm variation allowance, got: {:?}",
+            d
+        );
     }
 
     #[test]
@@ -4814,6 +4925,119 @@ mod tests {
         assert!(err
             .iter()
             .any(|e| e.field_path == "similar_motion_ratio_max" && e.reason == "out_of_range"));
+    }
+
+    #[test]
+    fn rule_param_validation_rejects_bad_upper_spacing_threshold() {
+        let active = vec!["gen.spacing.upper_adjacent_max_octave".to_string()];
+        let mut params = BTreeMap::new();
+        params.insert(
+            "gen.spacing.upper_adjacent_max_octave".to_string(),
+            json!({ "max_semitones": 0, "exclude_lowest_adjacent_pair": true }),
+        );
+        let err = validate_rule_params(active.iter(), &params, 3).expect_err("must fail");
+        assert!(err
+            .iter()
+            .any(|e| e.field_path == "max_semitones" && e.reason == "out_of_range"));
+    }
+
+    #[test]
+    fn rule_param_validation_rejects_bad_parallel_imperfect_limit() {
+        let active = vec!["gen.motion.consecutive_parallel_imperfects_limited".to_string()];
+        let mut params = BTreeMap::new();
+        params.insert(
+            "gen.motion.consecutive_parallel_imperfects_limited".to_string(),
+            json!({ "max_consecutive": 1 }),
+        );
+        let err = validate_rule_params(active.iter(), &params, 3).expect_err("must fail");
+        assert!(err
+            .iter()
+            .any(|e| e.field_path == "max_consecutive" && e.reason == "out_of_range"));
+    }
+
+    #[test]
+    fn spacing_upper_adjacent_can_exclude_lowest_adjacent_pair() {
+        let score = NormalizedScore {
+            meta: ScoreMeta {
+                exercise_count: 1,
+                key_signature: KeySignature {
+                    tonic_pc: 0,
+                    mode: ScaleMode::Major,
+                },
+                time_signature: TimeSignature {
+                    numerator: 4,
+                    denominator: 4,
+                },
+                ticks_per_quarter: 480,
+            },
+            voices: vec![
+                Voice {
+                    voice_index: 0,
+                    name: "s".to_string(),
+                    notes: vec![NoteEvent {
+                        note_id: "s0".to_string(),
+                        voice_index: 0,
+                        midi: 72,
+                        start_tick: 0,
+                        duration_ticks: 960,
+                        tie_start: false,
+                        tie_end: false,
+                    }],
+                },
+                Voice {
+                    voice_index: 1,
+                    name: "a".to_string(),
+                    notes: vec![NoteEvent {
+                        note_id: "a0".to_string(),
+                        voice_index: 1,
+                        midi: 64,
+                        start_tick: 0,
+                        duration_ticks: 960,
+                        tie_start: false,
+                        tie_end: false,
+                    }],
+                },
+                Voice {
+                    voice_index: 2,
+                    name: "b".to_string(),
+                    notes: vec![NoteEvent {
+                        note_id: "b0".to_string(),
+                        voice_index: 2,
+                        midi: 44,
+                        start_tick: 0,
+                        duration_ticks: 960,
+                        tie_start: false,
+                        tie_end: false,
+                    }],
+                },
+            ],
+        };
+
+        let mut params = BTreeMap::new();
+        params.insert(
+            "gen.spacing.upper_adjacent_max_octave".to_string(),
+            json!({ "max_semitones": 12, "exclude_lowest_adjacent_pair": true }),
+        );
+        let ctx = RuleContext {
+            score: &score,
+            preset_id: &PresetId::GeneralVoiceLeading,
+            rule_params: &params,
+        };
+        assert!(r_spacing_upper_octave(&ctx).is_empty());
+
+        let mut params_with_lowest = BTreeMap::new();
+        params_with_lowest.insert(
+            "gen.spacing.upper_adjacent_max_octave".to_string(),
+            json!({ "max_semitones": 12, "exclude_lowest_adjacent_pair": false }),
+        );
+        let ctx_with_lowest = RuleContext {
+            score: &score,
+            preset_id: &PresetId::GeneralVoiceLeading,
+            rule_params: &params_with_lowest,
+        };
+        let out = r_spacing_upper_octave(&ctx_with_lowest);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].rule_id, "gen.spacing.upper_adjacent_max_octave");
     }
 
     #[test]

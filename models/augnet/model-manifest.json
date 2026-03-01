@@ -1,0 +1,218 @@
+{
+  "conversion": {
+    "allow_opset_override": false,
+    "allow_output_head_mismatch": false,
+    "enforce_fixed_time_axis": true,
+    "seed": 0,
+    "skip_runtime_check": false,
+    "tool": "tools/augnet/convert_to_onnx.py"
+  },
+  "environment": {
+    "onnx": "1.15.0",
+    "onnxruntime": "1.17.1",
+    "platform": "Linux-6.8.0-100-lowlatency-x86_64-with-glibc2.39",
+    "python": "3.10.19",
+    "tensorflow": "2.13.1",
+    "tf2onnx": "1.16.1"
+  },
+  "generated_utc": "2026-02-27T03:29:11+00:00",
+  "model_id": "augmentednet-v1",
+  "onnx": {
+    "onnx_path": "models/augnet/AugmentedNet.onnx",
+    "onnx_sha256": "05f15a09c300dd7d65e05ec199a42d74210f0cdf992c2a39c65c3c4deebd3016",
+    "opset": 13
+  },
+  "reproducibility": {
+    "byte_identical_required": false,
+    "policy": "Functional reproducibility is required in Phase 1: identical input/output signatures and numerically equivalent inference outputs across repeated conversions.",
+    "policy_id": "functional-equivalence-v1"
+  },
+  "schema_version": 2,
+  "signature": {
+    "fixed_time_axis_contract": {
+      "all_inputs_fixed": true,
+      "dimension": 1,
+      "enforced": true,
+      "lengths": [
+        640,
+        640,
+        640
+      ]
+    },
+    "inputs": [
+      {
+        "dtype": "float32",
+        "name": "X_Bass19",
+        "shape": [
+          null,
+          640,
+          19
+        ]
+      },
+      {
+        "dtype": "float32",
+        "name": "X_Chromagram19",
+        "shape": [
+          null,
+          640,
+          19
+        ]
+      },
+      {
+        "dtype": "float32",
+        "name": "X_MeasureNoteOnset14",
+        "shape": [
+          null,
+          640,
+          14
+        ]
+      }
+    ],
+    "keras_output_heads": [
+      "Alto35",
+      "Bass35",
+      "HarmonicRhythm7",
+      "LocalKey38",
+      "PitchClassSet121",
+      "RomanNumeral31",
+      "Soprano35",
+      "Tenor35",
+      "TonicizedKey38"
+    ],
+    "keras_output_names": [
+      "Alto35/BiasAdd",
+      "Bass35/BiasAdd",
+      "HarmonicRhythm7/BiasAdd",
+      "LocalKey38/BiasAdd",
+      "PitchClassSet121/BiasAdd",
+      "RomanNumeral31/BiasAdd",
+      "Soprano35/BiasAdd",
+      "Tenor35/BiasAdd",
+      "TonicizedKey38/BiasAdd"
+    ],
+    "onnx_input_names": [
+      "X_Bass19",
+      "X_Chromagram19",
+      "X_MeasureNoteOnset14"
+    ],
+    "onnx_input_shapes": [
+      [
+        null,
+        640,
+        19
+      ],
+      [
+        null,
+        640,
+        19
+      ],
+      [
+        null,
+        640,
+        14
+      ]
+    ],
+    "onnx_output_heads": [
+      "Alto35",
+      "Bass35",
+      "HarmonicRhythm7",
+      "LocalKey38",
+      "PitchClassSet121",
+      "RomanNumeral31",
+      "Soprano35",
+      "Tenor35",
+      "TonicizedKey38"
+    ],
+    "onnx_output_names": [
+      "Alto35",
+      "Bass35",
+      "HarmonicRhythm7",
+      "LocalKey38",
+      "PitchClassSet121",
+      "RomanNumeral31",
+      "Soprano35",
+      "Tenor35",
+      "TonicizedKey38"
+    ],
+    "output_head_mapping": [
+      {
+        "index": 0,
+        "keras_head": "Alto35",
+        "keras_output_name": "Alto35/BiasAdd",
+        "match": true,
+        "onnx_head": "Alto35",
+        "onnx_output_name": "Alto35"
+      },
+      {
+        "index": 1,
+        "keras_head": "Bass35",
+        "keras_output_name": "Bass35/BiasAdd",
+        "match": true,
+        "onnx_head": "Bass35",
+        "onnx_output_name": "Bass35"
+      },
+      {
+        "index": 2,
+        "keras_head": "HarmonicRhythm7",
+        "keras_output_name": "HarmonicRhythm7/BiasAdd",
+        "match": true,
+        "onnx_head": "HarmonicRhythm7",
+        "onnx_output_name": "HarmonicRhythm7"
+      },
+      {
+        "index": 3,
+        "keras_head": "LocalKey38",
+        "keras_output_name": "LocalKey38/BiasAdd",
+        "match": true,
+        "onnx_head": "LocalKey38",
+        "onnx_output_name": "LocalKey38"
+      },
+      {
+        "index": 4,
+        "keras_head": "PitchClassSet121",
+        "keras_output_name": "PitchClassSet121/BiasAdd",
+        "match": true,
+        "onnx_head": "PitchClassSet121",
+        "onnx_output_name": "PitchClassSet121"
+      },
+      {
+        "index": 5,
+        "keras_head": "RomanNumeral31",
+        "keras_output_name": "RomanNumeral31/BiasAdd",
+        "match": true,
+        "onnx_head": "RomanNumeral31",
+        "onnx_output_name": "RomanNumeral31"
+      },
+      {
+        "index": 6,
+        "keras_head": "Soprano35",
+        "keras_output_name": "Soprano35/BiasAdd",
+        "match": true,
+        "onnx_head": "Soprano35",
+        "onnx_output_name": "Soprano35"
+      },
+      {
+        "index": 7,
+        "keras_head": "Tenor35",
+        "keras_output_name": "Tenor35/BiasAdd",
+        "match": true,
+        "onnx_head": "Tenor35",
+        "onnx_output_name": "Tenor35"
+      },
+      {
+        "index": 8,
+        "keras_head": "TonicizedKey38",
+        "keras_output_name": "TonicizedKey38/BiasAdd",
+        "match": true,
+        "onnx_head": "TonicizedKey38",
+        "onnx_output_name": "TonicizedKey38"
+      }
+    ],
+    "output_head_order_match": true
+  },
+  "source": {
+    "hdf5_path": "models/augnet/source/AugmentedNet.hdf5",
+    "hdf5_sha256": "a4e410e75d72fa270163c3585e5a9651668dbcec9b459f803e0e14ba51aed78b"
+  },
+  "status": "generated"
+}

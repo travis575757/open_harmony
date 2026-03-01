@@ -40,7 +40,10 @@ function sampleRequest() {
 }
 
 test("analyzeRequest throws when wasm analyzer is not initialized", () => {
-  assert.throws(() => analyzeRequest(sampleRequest()), /FATAL: analyzer is not initialized/);
+  return assert.rejects(
+    analyzeRequest(sampleRequest()),
+    /FATAL: analyzer is not initialized/
+  );
 });
 
 test("initAnalyzer rejects when wasm module cannot be loaded", async () => {

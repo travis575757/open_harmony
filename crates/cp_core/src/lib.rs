@@ -86,7 +86,49 @@ pub enum PresetId {
     Species4,
     Species5,
     GeneralVoiceLeading,
+    ModerateClassical,
+    Relaxed,
     Custom,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AnalysisBackend {
+    #[default]
+    RuleBased,
+    AugnetOnnx,
+    Hybrid,
+}
+
+fn default_augnet_fixed_offset() -> f64 {
+    0.125
+}
+
+fn default_augnet_max_steps() -> usize {
+    640
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AugmentedNetBackendConfig {
+    #[serde(default)]
+    pub model_path: Option<String>,
+    #[serde(default)]
+    pub manifest_path: Option<String>,
+    #[serde(default = "default_augnet_fixed_offset")]
+    pub fixed_offset: f64,
+    #[serde(default = "default_augnet_max_steps")]
+    pub max_steps: usize,
+}
+
+impl Default for AugmentedNetBackendConfig {
+    fn default() -> Self {
+        Self {
+            model_path: None,
+            manifest_path: None,
+            fixed_offset: default_augnet_fixed_offset(),
+            max_steps: default_augnet_max_steps(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +144,10 @@ pub struct AnalysisConfig {
     pub rule_params: std::collections::BTreeMap<RuleId, serde_json::Value>,
     #[serde(default)]
     pub harmonic_rhythm: HarmonicRhythm,
+    #[serde(default)]
+    pub analysis_backend: AnalysisBackend,
+    #[serde(default)]
+    pub augnet_backend: AugmentedNetBackendConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -109,9 +155,15 @@ pub struct AnalysisConfig {
 pub enum HarmonicRhythm {
     #[default]
     NoteOnset,
-    FixedPerBar { chords_per_bar: u8 },
-    FixedBarsPerChord { bars_per_chord: u8 },
-    PerMeasure { chords_per_bar: Vec<u8> },
+    FixedPerBar {
+        chords_per_bar: u8,
+    },
+    FixedBarsPerChord {
+        bars_per_chord: u8,
+    },
+    PerMeasure {
+        chords_per_bar: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,10 +226,43 @@ pub struct AnalysisSummary {
     pub active_rule_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HarmonicOutputSource {
+    RuleBased,
+    AugnetOnnx,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HarmonicOutput {
+    pub output_id: u32,
+    pub start_tick: u32,
+    pub end_tick: u32,
+    pub source: HarmonicOutputSource,
+    #[serde(default)]
+    pub roman_numeral: Option<String>,
+    #[serde(default)]
+    pub local_key: Option<String>,
+    #[serde(default)]
+    pub tonicized_key: Option<String>,
+    #[serde(default)]
+    pub chord_quality: Option<String>,
+    #[serde(default)]
+    pub inversion: Option<String>,
+    #[serde(default)]
+    pub chord_label: Option<String>,
+    #[serde(default)]
+    pub confidence: Option<f64>,
+    #[serde(default)]
+    pub logits: std::collections::BTreeMap<String, Vec<f32>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisResponse {
     pub diagnostics: Vec<AnalysisDiagnostic>,
     pub harmonic_slices: Vec<HarmonicSlice>,
+    #[serde(default)]
+    pub harmonic_outputs: Vec<HarmonicOutput>,
     pub nct_tags: Vec<NctTag>,
     pub summary: AnalysisSummary,
     #[serde(default)]

@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "source_id": "tied_barlines",
+  "measure_number_shift": 0,
+  "slices": [
+    {
+      "index": 0,
+      "start_div": 0,
+      "end_div": 4,
+      "measure_number": 1,
+      "notes": [
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "C4",
+          "midi": 60,
+          "onset": true,
+          "hold": false,
+          "tie_start": true,
+          "tie_stop": false,
+          "interval_from_bass": "P1"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "start_div": 4,
+      "end_div": 6,
+      "measure_number": 2,
+      "notes": [
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "C4",
+          "midi": 60,
+          "onset": false,
+          "hold": true,
+          "tie_start": false,
+          "tie_stop": true,
+          "interval_from_bass": "P1"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "start_div": 6,
+      "end_div": 8,
+      "measure_number": 2,
+      "notes": [
+        {
+          "part_id": "P1",
+          "voice_id": "1",
+          "spelling": "D4",
+          "midi": 62,
+          "onset": true,
+          "hold": false,
+          "tie_start": false,
+          "tie_stop": false,
+          "interval_from_bass": "P1"
+        }
+      ]
+    }
+  ]
+}

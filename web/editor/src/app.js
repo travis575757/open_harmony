@@ -1,6 +1,11 @@
 import {
   buildAbcFromVoices,
   clampMidiForEducation,
+  durationTokenFromEighths,
+  DURATION_STEP_EIGHTHS,
+  MAX_DURATION_EIGHTHS,
+  MIN_DURATION_EIGHTHS,
+  normalizeDurationEighths,
   notesToVoiceText,
   parseVoiceText,
   speciesDefaultDurationEighths,
@@ -14,7 +19,7 @@ import {
   drawSelectedOverlay,
 } from "./diagnosticsOverlay.js";
 import { FUX_CANTUS, getCantusById } from "./fuxCantus.js";
-import { exportMusicXml, importMusicXml } from "./musicxml.js";
+import { exportMusicXml } from "./musicxml.js";
 import {
   keySignaturePcForMode,
   quantizeMidiToScale,
@@ -24,7 +29,19 @@ import { BUILTIN_PRESET_IDS, buildRuleCatalog, getBasePresetIds, presetLabel } f
 import { resolveUiRuleState, toggleRuleOverride } from "./ruleConfig.js";
 import { KEY_OPTIONS, buildAnalysisRequest, createDefaultVoices, keyLabelByPc, normalizeVoiceIds } from "./scoreModel.js";
 import { loadCustomProfiles, loadEditorSettings, saveCustomProfiles, saveEditorSettings } from "./storage.js";
-import { analyzeRequest, initAnalyzer } from "./wasmClient.js";
+import { analyzeRequest, importMusicXmlWithWasm, initAnalyzer } from "./wasmClient.js";
+import {
+  DEFAULT_ANALYSIS_BACKEND,
+  DEFAULT_RULE_BASED_CHORDS_PER_BAR,
+  analysisErrorMessage,
+  analysisModeUiState,
+  buildAnalysisFailureUiModel,
+  normalizeAnalysisBackend,
+  normalizeRuleBasedChordsPerBar,
+  persistableAnalysisSettings,
+  readPersistedAnalysisSettings,
+} from "./analysisMode.js";
+import { buildHarmonyListMarkup, buildModeAwareHarmonyRows } from "./harmonyView.js";
 
 const ui = {
   presetSelect: document.getElementById("preset-select"),
@@ -32,6 +49,12 @@ const ui = {
   voiceCount: document.getElementById("voice-count"),
   keyTonic: document.getElementById("key-tonic"),
   modeSelect: document.getElementById("mode-select"),
+  analysisMethodSelect: document.getElementById("analysis-method-select"),
+  harmonicRhythmRuleControls: document.getElementById("harmonic-rhythm-rule-controls"),
+  harmonicRhythmChordsPerBar: document.getElementById("harmonic-rhythm-chords-per-bar"),
+  harmonicRhythmAutoNote: document.getElementById("harmonic-rhythm-auto-note"),
+  augnetDebugToggle: document.getElementById("augnet-debug-toggle"),
+  ruleCheckerToggle: document.getElementById("rule-checker-toggle"),
   timeSignatureSelect: document.getElementById("time-signature-select"),
   addMeasure: document.getElementById("add-measure"),
   removeMeasure: document.getElementById("remove-measure"),
@@ -39,6 +62,7 @@ const ui = {
   zoomLabel: document.getElementById("zoom-label"),
   barNumberToggle: document.getElementById("bar-number-toggle"),
   romanToggle: document.getElementById("roman-toggle"),
+  harmonicSlicesToggle: document.getElementById("harmonic-slices-toggle"),
   cantusSelect: document.getElementById("cantus-select"),
   cantusTargetVoice: document.getElementById("cantus-target-voice"),
   cantusLockToggle: document.getElementById("cantus-lock-toggle"),
@@ -61,11 +85,13 @@ const ui = {
   warningList: document.getElementById("warning-list"),
   paper: document.getElementById("paper"),
   abcAudio: document.getElementById("abc-audio"),
-  insertDuration: document.getElementById("insert-duration"),
+  insertNoteButtons: document.getElementById("insert-note-buttons"),
+  insertRestButtons: document.getElementById("insert-rest-buttons"),
   insertNoteBefore: document.getElementById("insert-note-before"),
   insertNoteAfter: document.getElementById("insert-note-after"),
-  insertRestBefore: document.getElementById("insert-rest-before"),
-  insertRestAfter: document.getElementById("insert-rest-after"),
+  replaceSelectedNote: document.getElementById("replace-selected-note"),
+  toggleSelectedDot: document.getElementById("toggle-selected-dot"),
+  toggleSelectedTie: document.getElementById("toggle-selected-tie"),
   deleteSelectedNote: document.getElementById("delete-selected-note"),
   voiceEditors: document.getElementById("voice-editors"),
   parseErrors: document.getElementById("parse-errors"),
@@ -73,6 +99,8 @@ const ui = {
   diagnosticsList: document.getElementById("diagnostics-list"),
   harmonyCard: document.getElementById("harmony-card"),
   harmonyList: document.getElementById("harmony-list"),
+  harmonyDump: document.getElementById("harmony-dump"),
+  copyHarmonyDump: document.getElementById("copy-harmony-dump"),
 };
 
 let presetSchema = null;
@@ -89,7 +117,21 @@ let synthController = null;
 let lastAudioVisualObj = null;
 let audioUpdateInFlight = false;
 let audioUpdateQueued = false;
+let lastHarmonyRows = [];
+let insertGlyphCounter = 0;
 const EIGHTH_TICKS = 240;
+const DURATION_EPS = 1e-6;
+const ROMAN_DUPLICATE_X_EPS = 24;
+const INSERT_DURATION_OPTIONS = [
+  { value: 0.25, label: "32nd" },
+  { value: 0.5, label: "16th" },
+  { value: 1, label: "8th" },
+  { value: 2, label: "Quarter" },
+  { value: 4, label: "Half" },
+  { value: 8, label: "Whole" },
+  { value: 16, label: "Double Whole" },
+];
+const REST_INSERT_DURATION_OPTIONS = INSERT_DURATION_OPTIONS.filter((option) => option.value < 16);
 
 const state = {
   preset_id: "species1",
@@ -97,10 +139,16 @@ const state = {
   voice_count: 2,
   key_tonic_pc: 0,
   mode: "major",
+  analysis_backend: DEFAULT_ANALYSIS_BACKEND,
+  rule_harmonic_rhythm_chords_per_bar: DEFAULT_RULE_BASED_CHORDS_PER_BAR,
+  show_augnet_debug: false,
+  rule_checker_enabled: true,
   time_signature: { numerator: 4, denominator: 4 },
+  pickup_eighths: null,
   score_zoom: 1,
   show_bar_numbers: false,
   show_roman: false,
+  show_harmonic_slices: true,
   voices: createDefaultVoices(2, "species1"),
   voice_raw_texts: [],
   rule_overrides: {
@@ -117,6 +165,12 @@ const state = {
   parse_errors: [],
   selected_diagnostic_key: null,
   custom_profiles: loadCustomProfiles(),
+  source_musicxml_raw: null,
+  imported_timeline_locked: false,
+  insert_template: {
+    is_rest: false,
+    duration_eighths: 2,
+  },
 };
 
 function timeSignatureOptionValue(ts) {
@@ -134,10 +188,24 @@ function parseTimeSignatureOption(raw) {
 }
 
 function getSupportedTimeSignatures() {
-  return supportedTimeSignaturesForPreset(state.preset_id);
+  const supported = supportedTimeSignaturesForPreset(state.preset_id);
+  const hasCurrent = supported.some(
+    (ts) =>
+      ts.numerator === state.time_signature.numerator &&
+      ts.denominator === state.time_signature.denominator,
+  );
+  if (state.imported_timeline_locked && !hasCurrent) {
+    return [...supported, { ...state.time_signature }];
+  }
+  return supported;
+}
+
+function isRuleCheckerEnabled() {
+  return state.rule_checker_enabled !== false;
 }
 
 function ensureTimeSignatureSupported() {
+  if (state.imported_timeline_locked) return;
   const supported = getSupportedTimeSignatures();
   const isCurrentSupported = supported.some(
     (ts) =>
@@ -157,6 +225,34 @@ function selectedNoteRef() {
   const note = voice.notes[noteIndex];
   if (!note) return null;
   return { voice, note, voiceIndex, noteIndex };
+}
+
+function nearlyEqual(a, b, eps = DURATION_EPS) {
+  return Math.abs(a - b) <= eps;
+}
+
+function clearVoiceTieEnds(voice) {
+  for (const note of voice.notes) {
+    note.tie_end = false;
+  }
+}
+
+function recomputeTieEnds(voice) {
+  clearVoiceTieEnds(voice);
+  for (let i = 1; i < voice.notes.length; i += 1) {
+    const prev = voice.notes[i - 1];
+    const cur = voice.notes[i];
+    if (
+      prev.tie_start &&
+      !prev.is_rest &&
+      !cur.is_rest &&
+      Number.isFinite(prev.midi) &&
+      Number.isFinite(cur.midi) &&
+      prev.midi === cur.midi
+    ) {
+      cur.tie_end = true;
+    }
+  }
 }
 
 function isVoiceLocked(voiceIndex) {
@@ -188,6 +284,11 @@ function ensureSelectedNoteValidity() {
   }
 }
 
+function invalidateSourceMusicXml() {
+  state.source_musicxml_raw = null;
+  state.imported_timeline_locked = false;
+}
+
 function refreshVoiceTextForVoice(voiceIndex) {
   if (!state.voices[voiceIndex]) return;
   const defaultDuration = speciesDefaultDurationEighths(state.preset_id);
@@ -198,7 +299,7 @@ function cloneNoteForClipboard(note) {
   return {
     midi: Number.isFinite(note.midi) ? note.midi : 60,
     is_rest: !!note.is_rest,
-    duration_eighths: Math.max(1, Number.parseInt(note.duration_eighths, 10) || 1),
+    duration_eighths: normalizeDurationEighths(note.duration_eighths, 1),
     tie_start: false,
     tie_end: false,
   };
@@ -209,10 +310,7 @@ function createEditableNote({ isRest, is_rest, durationEighths, duration_eighths
     note_id: "",
     midi: Number.isFinite(midi) ? midi : 60,
     is_rest: !!(isRest ?? is_rest),
-    duration_eighths: Math.max(
-      1,
-      Number.parseInt(durationEighths ?? duration_eighths, 10) || 1,
-    ),
+    duration_eighths: normalizeDurationEighths(durationEighths ?? duration_eighths, 1),
     tie_start: false,
     tie_end: false,
   };
@@ -227,29 +325,149 @@ function selectedOrDefaultMidi() {
   return clampMidiForEducation(quantizeMidiToScale(base, state.key_tonic_pc, state.mode, 1));
 }
 
+function splitVoiceNotesToMeasures(voice) {
+  const indexMap = new Map();
+  if (!voice || !Array.isArray(voice.notes) || voice.notes.length === 0) {
+    return indexMap;
+  }
+  const measure = measureUnitsEighths();
+  if (!Number.isFinite(measure) || measure <= DURATION_EPS) {
+    return indexMap;
+  }
+
+  const rebuilt = [];
+  let cursor = 0;
+
+  for (let oldIndex = 0; oldIndex < voice.notes.length; oldIndex += 1) {
+    const note = voice.notes[oldIndex];
+    indexMap.set(oldIndex, rebuilt.length);
+
+    let remaining = normalizeDurationEighths(note.duration_eighths, 1);
+    if (!Number.isFinite(remaining) || remaining <= DURATION_EPS) {
+      continue;
+    }
+
+    let remainingInMeasure = measure - (cursor % measure);
+    if (remainingInMeasure <= DURATION_EPS) {
+      remainingInMeasure = measure;
+    }
+
+    const segments = [];
+    while (remaining > DURATION_EPS) {
+      const piece = Math.max(
+        DURATION_STEP_EIGHTHS,
+        normalizeDurationEighths(Math.min(remaining, remainingInMeasure), DURATION_STEP_EIGHTHS),
+      );
+      segments.push(piece);
+      remaining -= piece;
+      cursor += piece;
+      remainingInMeasure = measure;
+    }
+
+    for (let i = 0; i < segments.length; i += 1) {
+      const isLast = i === segments.length - 1;
+      const canTie = !note.is_rest && Number.isFinite(note.midi);
+      rebuilt.push({
+        note_id: "",
+        midi: Number.isFinite(note.midi) ? note.midi : 60,
+        is_rest: !!note.is_rest,
+        duration_eighths: segments[i],
+        tie_start: canTie ? (!isLast || !!note.tie_start) : false,
+        tie_end: false,
+      });
+    }
+  }
+
+  if (rebuilt.length > 0) {
+    voice.notes = rebuilt;
+  }
+  return indexMap;
+}
+
 function commitVoiceMutation(voiceIndex, newSelectedNoteIndex = null) {
+  invalidateSourceMusicXml();
+  const voice = state.voices[voiceIndex];
+  let selectedIndex = Number.isInteger(newSelectedNoteIndex) ? newSelectedNoteIndex : null;
+  if (voice) {
+    const indexMap = splitVoiceNotesToMeasures(voice);
+    if (selectedIndex != null) {
+      selectedIndex = indexMap.get(selectedIndex) ?? Math.min(selectedIndex, Math.max(voice.notes.length - 1, 0));
+    }
+    recomputeTieEnds(voice);
+  }
   normalizeVoiceIds(state.voices);
   refreshVoiceTextForVoice(voiceIndex);
-  if (Number.isInteger(newSelectedNoteIndex)) {
-    selectNote(voiceIndex, newSelectedNoteIndex);
+  if (Number.isInteger(selectedIndex)) {
+    selectNote(voiceIndex, selectedIndex);
   } else {
     ensureSelectedNoteValidity();
   }
   runAnalysisAndRender();
 }
 
-function insertAtSelection(kind, position) {
+function insertAtSelection(position) {
   const ref = selectedNoteRef();
   if (!ref) return;
   if (isVoiceLocked(ref.voiceIndex)) return;
-  const duration = Math.max(1, Number.parseInt(ui.insertDuration.value, 10) || 2);
-  const newNote =
-    kind === "rest"
-      ? createEditableNote({ isRest: true, durationEighths: duration, midi: 60 })
-      : createEditableNote({ isRest: false, durationEighths: duration, midi: selectedOrDefaultMidi() });
+  const template = state.insert_template ?? { is_rest: false, duration_eighths: 2 };
+  const newNote = createEditableNote({
+    isRest: !!template.is_rest,
+    durationEighths: normalizeDurationEighths(template.duration_eighths, 2),
+    midi: template.is_rest ? 60 : selectedOrDefaultMidi(),
+  });
   const insertIndex = position === "before" ? ref.noteIndex : ref.noteIndex + 1;
   ref.voice.notes.splice(insertIndex, 0, newNote);
   commitVoiceMutation(ref.voiceIndex, insertIndex);
+}
+
+function replaceSelected() {
+  const ref = selectedNoteRef();
+  if (!ref) return;
+  if (isVoiceLocked(ref.voiceIndex)) return;
+
+  const template = state.insert_template ?? { is_rest: false, duration_eighths: 2 };
+  const replacement = createEditableNote({
+    isRest: !!template.is_rest,
+    durationEighths: normalizeDurationEighths(template.duration_eighths, 2),
+    midi:
+      template.is_rest
+        ? 60
+        : Number.isFinite(ref.note.midi) && !ref.note.is_rest
+          ? ref.note.midi
+          : selectedOrDefaultMidi(),
+  });
+  ref.voice.notes[ref.noteIndex] = replacement;
+  commitVoiceMutation(ref.voiceIndex, ref.noteIndex);
+}
+
+function toggleSelectedDot() {
+  const ref = selectedNoteRef();
+  if (!ref) return;
+  if (isVoiceLocked(ref.voiceIndex)) return;
+
+  const current = normalizeDurationEighths(ref.note.duration_eighths, 1);
+  const dottedBase = current / 1.5;
+  if (dottedBase >= MIN_DURATION_EIGHTHS - DURATION_EPS && dottedBase <= MAX_DURATION_EIGHTHS + DURATION_EPS) {
+    const normalizedBase = normalizeDurationEighths(dottedBase, null);
+    if (normalizedBase != null && nearlyEqual(normalizedBase * 1.5, current)) {
+      ref.note.duration_eighths = normalizedBase;
+      commitVoiceMutation(ref.voiceIndex, ref.noteIndex);
+      return;
+    }
+  }
+
+  const dotted = normalizeDurationEighths(current * 1.5, current);
+  ref.note.duration_eighths = dotted;
+  commitVoiceMutation(ref.voiceIndex, ref.noteIndex);
+}
+
+function toggleSelectedTieStart() {
+  const ref = selectedNoteRef();
+  if (!ref) return;
+  if (isVoiceLocked(ref.voiceIndex)) return;
+  if (ref.note.is_rest || !Number.isFinite(ref.note.midi)) return;
+  ref.note.tie_start = !ref.note.tie_start;
+  commitVoiceMutation(ref.voiceIndex, ref.noteIndex);
 }
 
 function deleteSelectedNote() {
@@ -288,22 +506,19 @@ function pasteAfterSelected() {
 }
 
 function measureUnitsEighths() {
-  return Math.max(
-    1,
-    Math.round((state.time_signature.numerator * 8) / Math.max(1, state.time_signature.denominator)),
-  );
+  return Math.max(1, (state.time_signature.numerator * 8) / Math.max(1, state.time_signature.denominator));
 }
 
 function voiceDurationEighths(voice) {
-  return voice.notes.reduce((acc, n) => acc + Math.max(0, n.duration_eighths || 0), 0);
+  return voice.notes.reduce((acc, n) => acc + Math.max(0, normalizeDurationEighths(n.duration_eighths, 0) || 0), 0);
 }
 
 function appendRestToVoice(voice, durationEighths) {
-  const d = Math.max(0, Math.round(durationEighths));
+  const d = Math.max(0, normalizeDurationEighths(durationEighths, 0));
   if (d <= 0) return;
   const last = voice.notes[voice.notes.length - 1];
   if (last && last.is_rest && !last.tie_start && !last.tie_end) {
-    last.duration_eighths += d;
+    last.duration_eighths = normalizeDurationEighths(last.duration_eighths + d, last.duration_eighths);
     return;
   }
   voice.notes.push({
@@ -317,15 +532,16 @@ function appendRestToVoice(voice, durationEighths) {
 }
 
 function removeDurationFromEnd(voice, durationEighths) {
-  let remaining = Math.max(0, Math.round(durationEighths));
+  let remaining = Math.max(0, normalizeDurationEighths(durationEighths, 0));
   while (remaining > 0 && voice.notes.length > 0) {
     const last = voice.notes[voice.notes.length - 1];
-    const take = Math.min(remaining, Math.max(1, last.duration_eighths || 1));
-    if (last.duration_eighths <= take) {
-      remaining -= last.duration_eighths;
+    const lastDuration = normalizeDurationEighths(last.duration_eighths, 1);
+    const take = Math.min(remaining, lastDuration);
+    if (lastDuration <= take + DURATION_EPS) {
+      remaining -= lastDuration;
       voice.notes.pop();
     } else {
-      last.duration_eighths -= take;
+      last.duration_eighths = normalizeDurationEighths(lastDuration - take, lastDuration - take);
       remaining -= take;
     }
   }
@@ -338,10 +554,11 @@ function trimTrailingRestsToDuration(voice, targetDurationEighths) {
     if (!last.is_rest) {
       break;
     }
-    const remove = Math.min(last.duration_eighths, current - targetDurationEighths);
-    last.duration_eighths -= remove;
+    const lastDuration = normalizeDurationEighths(last.duration_eighths, 1);
+    const remove = Math.min(lastDuration, current - targetDurationEighths);
+    last.duration_eighths = normalizeDurationEighths(lastDuration - remove, lastDuration - remove);
     current -= remove;
-    if (last.duration_eighths <= 0) {
+    if (last.duration_eighths <= DURATION_EPS) {
       voice.notes.pop();
     }
   }
@@ -355,7 +572,7 @@ function refreshVoiceTextsFromState() {
 }
 
 function alignVoicesAfterReferenceChange(referenceDurationEighths) {
-  let finalDuration = Math.max(0, Math.round(referenceDurationEighths));
+  let finalDuration = Math.max(0, normalizeDurationEighths(referenceDurationEighths, 0));
   for (const voice of state.voices) {
     const afterTrim = trimTrailingRestsToDuration(voice, finalDuration);
     if (afterTrim > finalDuration) {
@@ -394,9 +611,16 @@ function buildTimedSoundingEvents() {
   for (const voice of state.voices) {
     let cursor = 0;
     for (const note of voice.notes) {
-      const durationTicks = Math.max(1, Math.round((note.duration_eighths || 1) * EIGHTH_TICKS));
-      const startTick = cursor;
-      const endTick = cursor + durationTicks;
+      const durationTicks = Math.max(
+        1,
+        Math.round(normalizeDurationEighths(note.duration_eighths, 1) * EIGHTH_TICKS),
+      );
+      const explicitStartEighths = Number(note.start_eighths);
+      const hasExplicitStart = Number.isFinite(explicitStartEighths) && explicitStartEighths >= 0;
+      const startTick = hasExplicitStart
+        ? Math.max(0, Math.round(explicitStartEighths * EIGHTH_TICKS))
+        : cursor;
+      const endTick = startTick + durationTicks;
       if (!note.is_rest && Number.isFinite(note.midi)) {
         events.push({
           note_id: note.note_id,
@@ -404,7 +628,7 @@ function buildTimedSoundingEvents() {
           end_tick: endTick,
         });
       }
-      cursor = endTick;
+      cursor = Math.max(cursor, endTick);
     }
   }
   return events;
@@ -412,6 +636,9 @@ function buildTimedSoundingEvents() {
 
 function figuredBassForSlice(slice) {
   const inversion = String(slice?.inversion || "");
+  if (/^\d+$/.test(inversion)) {
+    return inversion === "42" ? "2" : inversion;
+  }
   const quality = String(slice?.quality || "");
   const isSeventh = quality.includes("7");
   if (inversion === "root") return isSeventh ? "7" : "";
@@ -419,6 +646,21 @@ function figuredBassForSlice(slice) {
   if (inversion === "second") return isSeventh ? "43" : "64";
   if (inversion === "third") return isSeventh ? "42" : "";
   return "";
+}
+
+function splitRomanLabelAndFigure(rawLabel, fallbackFigure) {
+  const normalized = String(rawLabel || "").trim();
+  if (!normalized) {
+    return { label: "", figure: fallbackFigure || "" };
+  }
+  // Capture inline figures in RN strings, including tonicized forms like V65/V.
+  const m = normalized.match(/^(.+?)(\d+)(\/.+)?$/);
+  if (!m) {
+    return { label: normalized, figure: fallbackFigure || "" };
+  }
+  const label = `${m[1]}${m[3] || ""}`;
+  const figure = m[2] || fallbackFigure || "";
+  return { label, figure };
 }
 
 function buildRomanAnchors(harmonicSlices, centers) {
@@ -440,22 +682,39 @@ function buildRomanAnchors(harmonicSlices, centers) {
   for (const slice of harmonicSlices) {
     const rawLabel = String(slice?.roman_numeral || "");
     if (!rawLabel) continue;
-    const label = rawLabel.replace(/\d+$/, "").toUpperCase();
-    const figure = figuredBassForSlice(slice);
+    const fallbackFigure = figuredBassForSlice(slice);
+    const { label, figure } = splitRomanLabelAndFigure(rawLabel, fallbackFigure);
     const tick = slice.start_tick;
     let hits = startsByTick.get(tick) ?? null;
     if (!hits || hits.length === 0) {
       let fallbackTick = null;
+      let fallbackDistance = Number.POSITIVE_INFINITY;
       for (const t of startTicks) {
-        if (t > tick) break;
-        fallbackTick = t;
+        const d = Math.abs(t - tick);
+        if (d < fallbackDistance) {
+          fallbackDistance = d;
+          fallbackTick = t;
+        } else if (d === fallbackDistance && fallbackTick != null && t > fallbackTick) {
+          // Prefer the later position in ties so the label doesn't drift left.
+          fallbackTick = t;
+        }
       }
       hits = fallbackTick != null ? startsByTick.get(fallbackTick) ?? null : null;
     }
     if (!hits || hits.length === 0) continue;
     const x = hits.reduce((sum, p) => sum + p.x, 0) / hits.length;
     const sourceY = Math.max(...hits.map((p) => p.y));
-    anchors.push({ x, sourceY, label, figure });
+    const prev = anchors[anchors.length - 1];
+    // Collapse near-duplicate adjacent labels to avoid unreadable repeated RN overlays.
+    if (
+      prev &&
+      prev.label === label &&
+      prev.figure === figure &&
+      Math.abs(prev.x - x) <= ROMAN_DUPLICATE_X_EPS
+    ) {
+      continue;
+    }
+    anchors.push({ x, sourceY, label, figure, startTick: tick });
   }
   return anchors;
 }
@@ -543,7 +802,7 @@ function activateDiagnosticSelection(index, opts = {}) {
   if (!setSelectedDiagnosticFromIndex(lastResponse, index)) return;
 
   renderDiagnostics(lastResponse);
-  redrawOverlayLayers(lastResponse, { showDiagnostics: true });
+  redrawOverlayLayers(lastResponse, { showDiagnostics: isRuleCheckerEnabled() });
 
   if (scrollList) {
     const row = ui.diagnosticsList.querySelector(`.diag-item[data-diag-index="${index}"]`);
@@ -582,13 +841,33 @@ function ensureVoiceCountConsistency() {
 }
 
 function loadPresetSchema() {
-  const url = new URL("../../../docs/planning/rules-presets.json", import.meta.url);
-  return fetch(url).then((res) => {
-    if (!res.ok) {
-      throw new Error(`Failed to load preset schema (${res.status})`);
+  const candidates = [
+    new URL("../rules-presets.json", import.meta.url),
+    new URL("../../../docs/planning/rules-presets.json", import.meta.url),
+    new URL("/docs/planning/rules-presets.json", window.location.origin),
+  ];
+  const failures = [];
+
+  async function loadNext(index) {
+    if (index >= candidates.length) {
+      const details = failures.length > 0 ? ` Tried: ${failures.join("; ")}` : "";
+      throw new Error(`Failed to load preset schema (404).${details}`);
     }
-    return res.json();
-  });
+    const url = candidates[index];
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        failures.push(`${url.pathname} -> ${res.status}`);
+        return loadNext(index + 1);
+      }
+      return res.json();
+    } catch (err) {
+      failures.push(`${url.pathname} -> ${err?.message ?? String(err)}`);
+      return loadNext(index + 1);
+    }
+  }
+
+  return loadNext(0);
 }
 
 function loadSettingsIntoState() {
@@ -610,17 +889,29 @@ function loadSettingsIntoState() {
   if (typeof saved.mode === "string") {
     state.mode = saved.mode;
   }
+  const analysisSettings = readPersistedAnalysisSettings(saved);
+  state.analysis_backend = analysisSettings.analysis_backend;
+  state.rule_harmonic_rhythm_chords_per_bar =
+    analysisSettings.rule_harmonic_rhythm_chords_per_bar;
+  state.show_augnet_debug = analysisSettings.show_augnet_debug;
+  if (typeof saved.rule_checker_enabled === "boolean") {
+    state.rule_checker_enabled = saved.rule_checker_enabled;
+  }
   if (saved.time_signature && Number.isInteger(saved.time_signature.numerator)) {
     state.time_signature.numerator = saved.time_signature.numerator;
   }
   if (saved.time_signature && Number.isInteger(saved.time_signature.denominator)) {
     state.time_signature.denominator = saved.time_signature.denominator;
   }
+  if (Number.isFinite(saved.pickup_eighths)) {
+    state.pickup_eighths = normalizeDurationEighths(saved.pickup_eighths, null);
+  }
   if (Number.isFinite(saved.score_zoom)) {
     state.score_zoom = Math.min(1.8, Math.max(0.5, Number(saved.score_zoom)));
   }
   state.show_bar_numbers = !!saved.show_bar_numbers;
   state.show_roman = !!saved.show_roman;
+  state.show_harmonic_slices = saved.show_harmonic_slices !== false;
   state.cantus_lock_enabled = saved.cantus_lock_enabled !== false;
   if (Number.isInteger(saved.cantus_voice_index)) {
     state.cantus_voice_index = saved.cantus_voice_index;
@@ -636,6 +927,12 @@ function loadSettingsIntoState() {
   if (typeof saved.rule_filter === "string") {
     state.rule_filter = saved.rule_filter;
   }
+  if (saved.insert_template && typeof saved.insert_template === "object") {
+    state.insert_template = {
+      is_rest: !!saved.insert_template.is_rest,
+      duration_eighths: normalizeDurationEighths(saved.insert_template.duration_eighths, 2),
+    };
+  }
   if (Array.isArray(saved.voice_raw_texts) && saved.voice_raw_texts.length > 0) {
     state.voice_raw_texts = saved.voice_raw_texts.slice(0, 4);
     state.voice_count = state.voice_raw_texts.length;
@@ -647,20 +944,28 @@ function loadSettingsIntoState() {
 }
 
 function persistSettings() {
+  const analysisSettings = persistableAnalysisSettings(state);
   saveEditorSettings({
     preset_id: state.preset_id,
     custom_base_preset_id: state.custom_base_preset_id,
     voice_count: state.voice_count,
     key_tonic_pc: state.key_tonic_pc,
     mode: state.mode,
+    analysis_backend: analysisSettings.analysis_backend,
+    rule_harmonic_rhythm_chords_per_bar: analysisSettings.rule_harmonic_rhythm_chords_per_bar,
+    show_augnet_debug: analysisSettings.show_augnet_debug,
+    rule_checker_enabled: state.rule_checker_enabled,
     time_signature: state.time_signature,
+    pickup_eighths: state.pickup_eighths,
     score_zoom: state.score_zoom,
     show_bar_numbers: state.show_bar_numbers,
     show_roman: state.show_roman,
+    show_harmonic_slices: state.show_harmonic_slices,
     cantus_lock_enabled: state.cantus_lock_enabled,
     cantus_voice_index: state.cantus_voice_index,
     rule_overrides: state.rule_overrides,
     rule_filter: state.rule_filter,
+    insert_template: state.insert_template,
     voice_raw_texts: state.voice_raw_texts,
   });
 }
@@ -693,6 +998,193 @@ function renderKeyControls() {
   ui.zoomLabel.textContent = `${Math.round(state.score_zoom * 100)}%`;
   ui.barNumberToggle.checked = state.show_bar_numbers;
   ui.romanToggle.checked = state.show_roman;
+  ui.harmonicSlicesToggle.checked = state.show_harmonic_slices;
+}
+
+function renderAnalysisControls() {
+  state.analysis_backend = normalizeAnalysisBackend(state.analysis_backend);
+  state.rule_harmonic_rhythm_chords_per_bar = normalizeRuleBasedChordsPerBar(
+    state.rule_harmonic_rhythm_chords_per_bar,
+  );
+  const uiState = analysisModeUiState(state.analysis_backend);
+  ui.analysisMethodSelect.value = state.analysis_backend;
+  ui.harmonicRhythmChordsPerBar.value = String(state.rule_harmonic_rhythm_chords_per_bar);
+  ui.harmonicRhythmRuleControls.hidden = !uiState.showRuleHarmonicRhythmControls;
+  ui.harmonicRhythmAutoNote.hidden = !uiState.showAugnetAutoRhythmNote;
+  ui.augnetDebugToggle.disabled = !uiState.enableAugnetDebugToggle;
+  if (!uiState.enableAugnetDebugToggle) {
+    state.show_augnet_debug = false;
+  }
+  ui.augnetDebugToggle.checked = state.show_augnet_debug;
+  ui.ruleCheckerToggle.checked = state.rule_checker_enabled !== false;
+}
+
+function buildInsertGlyphAbc(isRest, durationEighths) {
+  const token = durationTokenFromEighths(durationEighths);
+  const body = `${isRest ? "z" : "C"}${token}`;
+  return `X:1\nM:4/4\nL:1/8\nK:C\n${body}`;
+}
+
+function renderInsertButton(container, { isRest, durationEighths, label }) {
+  const isActive =
+    !!state.insert_template &&
+    state.insert_template.is_rest === isRest &&
+    nearlyEqual(
+      normalizeDurationEighths(state.insert_template.duration_eighths, 1),
+      normalizeDurationEighths(durationEighths, 1),
+    );
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `insert-choice${isActive ? " active" : ""}`;
+  button.dataset.rest = isRest ? "1" : "0";
+  button.dataset.duration = String(durationEighths);
+  button.title = `${isRest ? "Rest" : "Note"} ${label}`;
+
+  const glyph = document.createElement("div");
+  glyph.className = "insert-glyph";
+  glyph.id = `insert-glyph-${insertGlyphCounter++}`;
+  button.appendChild(glyph);
+
+  const text = document.createElement("div");
+  text.className = "insert-choice-label";
+  text.textContent = label;
+  button.appendChild(text);
+  container.appendChild(button);
+
+  if (window.ABCJS?.renderAbc) {
+    try {
+      window.ABCJS.renderAbc(glyph.id, buildInsertGlyphAbc(isRest, durationEighths), {
+        add_classes: true,
+        responsive: "resize",
+        scale: 1.8,
+        staffwidth: 170,
+        wrap: { preferredMeasuresPerLine: 1 },
+      });
+      const svg = glyph.querySelector("svg");
+      if (svg) {
+        svg.style.pointerEvents = "none";
+        const staffJunk = [
+          ".abcjs-staff",
+          ".abcjs-clef",
+          ".abcjs-key-signature",
+          ".abcjs-time-signature",
+          ".abcjs-bar",
+          ".abcjs-ledger",
+        ].flatMap((selector) => [...svg.querySelectorAll(selector)]);
+        for (const el of staffJunk) {
+          el.style.display = "none";
+        }
+        const PRIMITIVE_SELECTOR = "path, ellipse, circle, rect, line, polyline, polygon";
+        const SYMBOL_ROOT_SELECTORS = [
+          ".abcjs-notehead",
+          ".abcjs-rest",
+          ".abcjs-stem",
+          ".abcjs-flag",
+          ".abcjs-beam-elem",
+          ".abcjs-accidentals",
+          '[class*=" abcjs-d"]',
+          '[class^="abcjs-d"]',
+          '[class*=" abcjs-n"]',
+          '[class^="abcjs-n"]',
+        ];
+
+        const symbolRootSet = new Set();
+        for (const selector of SYMBOL_ROOT_SELECTORS) {
+          for (const el of svg.querySelectorAll(selector)) {
+            if (el instanceof SVGGraphicsElement) {
+              symbolRootSet.add(el);
+            }
+          }
+        }
+
+        function isVisiblePrimitive(el) {
+          const fill = String(el.getAttribute("fill") || "").toLowerCase();
+          const stroke = String(el.getAttribute("stroke") || "").toLowerCase();
+          const opacity = Number.parseFloat(el.getAttribute("opacity") || "1");
+          const fillOpacity = Number.parseFloat(el.getAttribute("fill-opacity") || "1");
+          const strokeOpacity = Number.parseFloat(el.getAttribute("stroke-opacity") || "1");
+          const style = String(el.getAttribute("style") || "").toLowerCase();
+          if (style.includes("display:none") || style.includes("visibility:hidden")) return false;
+          if (Number.isFinite(opacity) && opacity <= 0) return false;
+          if (
+            (fill === "none" || (Number.isFinite(fillOpacity) && fillOpacity <= 0)) &&
+            (stroke === "none" || (Number.isFinite(strokeOpacity) && strokeOpacity <= 0))
+          ) {
+            return false;
+          }
+          return true;
+        }
+
+        let symbolPrimitives = [...symbolRootSet].flatMap((root) => {
+          if (root.matches(PRIMITIVE_SELECTOR)) return [root];
+          return [...root.querySelectorAll(PRIMITIVE_SELECTOR)];
+        });
+        symbolPrimitives = symbolPrimitives.filter(
+          (el) => el instanceof SVGGraphicsElement && isVisiblePrimitive(el),
+        );
+
+        if (symbolPrimitives.length === 0) {
+          symbolPrimitives = [...svg.querySelectorAll(PRIMITIVE_SELECTOR)].filter(
+            (el) => el instanceof SVGGraphicsElement && isVisiblePrimitive(el),
+          );
+        }
+
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        for (const el of symbolPrimitives) {
+          if (!(el instanceof SVGGraphicsElement) || typeof el.getBBox !== "function") continue;
+          const b = el.getBBox();
+          if (!Number.isFinite(b.width) || !Number.isFinite(b.height)) continue;
+          if (b.width <= 0 || b.height <= 0) continue;
+          minX = Math.min(minX, b.x);
+          minY = Math.min(minY, b.y);
+          maxX = Math.max(maxX, b.x + b.width);
+          maxY = Math.max(maxY, b.y + b.height);
+        }
+
+        if (Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) {
+          const width = Math.max(1, maxX - minX);
+          const height = Math.max(1, maxY - minY);
+          const side = Math.max(width, height);
+          const cx = minX + width / 2;
+          const cy = minY + height / 2;
+          const pad = Math.max(2, side * 0.16);
+          const framedSide = side + pad * 2;
+          svg.setAttribute(
+            "viewBox",
+            `${cx - framedSide / 2} ${cy - framedSide / 2} ${framedSide} ${framedSide}`,
+          );
+          svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+        }
+      }
+    } catch (_err) {
+      glyph.textContent = isRest ? "z" : "C";
+    }
+  } else {
+    glyph.textContent = isRest ? "z" : "C";
+  }
+}
+
+function renderInsertControls() {
+  if (!ui.insertNoteButtons || !ui.insertRestButtons) return;
+  ui.insertNoteButtons.innerHTML = "";
+  ui.insertRestButtons.innerHTML = "";
+  for (const option of INSERT_DURATION_OPTIONS) {
+    renderInsertButton(ui.insertNoteButtons, {
+      isRest: false,
+      durationEighths: option.value,
+      label: option.label,
+    });
+  }
+  for (const option of REST_INSERT_DURATION_OPTIONS) {
+    renderInsertButton(ui.insertRestButtons, {
+      isRest: true,
+      durationEighths: option.value,
+      label: option.label,
+    });
+  }
 }
 
 function renderCantusControls() {
@@ -714,6 +1206,12 @@ function renderCantusControls() {
 }
 
 function parseAllVoices() {
+  if (state.imported_timeline_locked) {
+    normalizeVoiceIds(state.voices);
+    ensureSelectedNoteValidity();
+    state.parse_errors = [];
+    return;
+  }
   const defaultDuration = speciesDefaultDurationEighths(state.preset_id);
   const parseErrors = [];
 
@@ -752,12 +1250,13 @@ function renderVoiceEditors() {
     const area = document.createElement("textarea");
     area.rows = 2;
     area.value = state.voice_raw_texts[i] ?? "";
-    area.placeholder = "Example: C8 D4 z2 E2 F1";
+    area.placeholder = "Example: C8 D2 z1 E/2 F/4";
     area.dataset.voiceIndex = String(i);
     area.disabled = locked;
     area.addEventListener("input", (event) => {
       const idx = Number.parseInt(event.target.dataset.voiceIndex, 10);
       if (isVoiceLocked(idx)) return;
+      invalidateSourceMusicXml();
       state.voice_raw_texts[idx] = event.target.value;
       parseAllVoices();
       debounceRender();
@@ -983,7 +1482,7 @@ function attachDragHandlers(svg) {
         );
         runAnalysisAndRender();
       } else if (lastResponse) {
-        renderScore(lastResponse, { showDiagnostics: true, updateAudio: false });
+        renderScore(lastResponse, { showDiagnostics: isRuleCheckerEnabled(), updateAudio: false });
       }
       dragState = null;
     };
@@ -1006,7 +1505,7 @@ function attachDragHandlers(svg) {
 
     selectNote(voiceIndex, noteIndex);
     if (isVoiceLocked(voiceIndex)) {
-      renderScore(lastResponse ?? { diagnostics: [] }, { showDiagnostics: true, updateAudio: false });
+      renderScore(lastResponse ?? { diagnostics: [] }, { showDiagnostics: isRuleCheckerEnabled(), updateAudio: false });
       return;
     }
     dragState = {
@@ -1031,6 +1530,12 @@ function attachDragHandlers(svg) {
 }
 
 function renderDiagnostics(response) {
+  if (!isRuleCheckerEnabled()) {
+    ui.diagnosticsSummary.textContent = "Rule checker disabled.";
+    state.selected_diagnostic_key = null;
+    ui.diagnosticsList.innerHTML = '<li class="diag-item">Rule diagnostics are disabled.</li>';
+    return;
+  }
   const items = response.diagnostics ?? [];
   ui.diagnosticsSummary.textContent = `${response.summary.error_count} errors, ${response.summary.warning_count} warnings, ${response.summary.active_rule_count} active rules`;
 
@@ -1065,26 +1570,85 @@ function renderWarnings(response) {
   ui.warningList.innerHTML = warnings.map((w) => `<li class="warning-item">${w}</li>`).join("");
 }
 
+function sanitizeDumpField(value) {
+  const text = value == null ? "" : String(value);
+  return text.replace(/\t/g, " ").replace(/\r?\n/g, " ").trim();
+}
+
+function formatHarmonyDump(response) {
+  const backend = normalizeAnalysisBackend(state.analysis_backend);
+  const lines = [`# backend\t${backend}`];
+
+  if (backend === "augnet_onnx") {
+    const outputs = (response.harmonic_outputs ?? [])
+      .filter((entry) => entry?.source === "augnet_onnx")
+      .slice()
+      .sort((a, b) => (a.start_tick - b.start_tick) || (a.output_id - b.output_id));
+    lines.push("index\tstart_tick\tend_tick\troman_numeral\tlocal_key\ttonicized_key\tquality\tinversion\tchord_label\tconfidence");
+    for (let i = 0; i < outputs.length; i += 1) {
+      const row = outputs[i];
+      lines.push(
+        [
+          i,
+          row?.start_tick ?? "",
+          row?.end_tick ?? "",
+          sanitizeDumpField(row?.roman_numeral),
+          sanitizeDumpField(row?.local_key),
+          sanitizeDumpField(row?.tonicized_key),
+          sanitizeDumpField(row?.chord_quality),
+          sanitizeDumpField(row?.inversion),
+          sanitizeDumpField(row?.chord_label),
+          Number.isFinite(row?.confidence) ? Number(row.confidence).toFixed(6) : "",
+        ].join("\t"),
+      );
+    }
+    return lines.join("\n");
+  }
+
+  const slices = (response.harmonic_slices ?? [])
+    .slice()
+    .sort((a, b) => (a.start_tick - b.start_tick) || (a.slice_id - b.slice_id));
+  lines.push("index\tstart_tick\tend_tick\troman_numeral\tquality\tinversion\tconfidence");
+  for (let i = 0; i < slices.length; i += 1) {
+    const row = slices[i];
+    lines.push(
+      [
+        i,
+        row?.start_tick ?? "",
+        row?.end_tick ?? "",
+        sanitizeDumpField(row?.roman_numeral),
+        sanitizeDumpField(row?.quality),
+        sanitizeDumpField(row?.inversion),
+        Number.isFinite(row?.confidence) ? Number(row.confidence).toFixed(6) : "",
+      ].join("\t"),
+    );
+  }
+  return lines.join("\n");
+}
+
+function renderHarmonyDump(response) {
+  if (!ui.harmonyDump) return;
+  if (!state.show_harmonic_slices || !response) {
+    ui.harmonyDump.value = "";
+    return;
+  }
+  ui.harmonyDump.value = formatHarmonyDump(response);
+}
+
 function renderHarmony(response) {
-  if (!state.show_roman) {
+  if (!state.show_harmonic_slices) {
     ui.harmonyCard.hidden = true;
     ui.harmonyList.innerHTML = "";
+    renderHarmonyDump(null);
+    lastHarmonyRows = [];
     return;
   }
   ui.harmonyCard.hidden = false;
-  const slices = response.harmonic_slices ?? [];
-  if (slices.length === 0) {
-    ui.harmonyList.innerHTML = '<li class="harmony-item">No harmonic slices.</li>';
-    return;
-  }
-  ui.harmonyList.innerHTML = slices
-    .map((s) => {
-      const label = s.roman_numeral ?? "?";
-      const quality = s.quality ?? "other";
-      const inversion = s.inversion ?? "unknown";
-      return `<li class="harmony-item">Tick ${s.start_tick}: ${label} (${quality}, ${inversion})</li>`;
-    })
-    .join("");
+  lastHarmonyRows = buildModeAwareHarmonyRows(response, state.analysis_backend, {
+    showDebugLogits: state.show_augnet_debug,
+  });
+  ui.harmonyList.innerHTML = buildHarmonyListMarkup(lastHarmonyRows, state.analysis_backend);
+  renderHarmonyDump(response);
 }
 
 function setAudioMessage(message) {
@@ -1133,11 +1697,25 @@ function ensureSynthController() {
   return synthController;
 }
 
+function resetSynthController() {
+  if (!ui.abcAudio) return;
+  if (synthController && typeof synthController.pause === "function") {
+    try {
+      synthController.pause();
+    } catch (_err) {
+      // ignore stale controller errors during refresh
+    }
+  }
+  synthController = null;
+  ui.abcAudio.innerHTML = "";
+}
+
 async function applyAudioPlaybackUpdate(visualObj) {
   if (!ui.abcAudio) return;
   lastAudioVisualObj = visualObj;
 
   if (!visualObj || !window.ABCJS?.synth) {
+    resetSynthController();
     setAudioMessage("");
     return;
   }
@@ -1148,10 +1726,14 @@ async function applyAudioPlaybackUpdate(visualObj) {
   }
 
   try {
+    resetSynthController();
     const controller = ensureSynthController();
     if (!controller) {
       setAudioMessage("Audio controls failed to initialize.");
       return;
+    }
+    if (typeof controller.pause === "function") {
+      controller.pause();
     }
     await withTimeout(controller.setTune(visualObj, false, {}), 4000, "Audio update");
   } catch (err) {
@@ -1189,6 +1771,7 @@ function renderScore(response, opts = {}) {
   }
 
   const scale = Math.max(0.5, Math.min(1.8, state.score_zoom || 1));
+  document.documentElement.style.setProperty("--oh-score-zoom", String(scale));
   const availableWidth = Math.max(320, Math.floor(ui.paper.clientWidth - 20));
   const staffwidth = Math.max(260, Math.floor(availableWidth / scale));
   const preferredMeasuresPerLine = Math.max(2, Math.floor(availableWidth / 180));
@@ -1198,6 +1781,7 @@ function renderScore(response, opts = {}) {
     presetId: state.preset_id,
     keyLabel: keyLabelByPc(keySignaturePcForMode(state.key_tonic_pc, state.mode)),
     timeSignature: state.time_signature,
+    pickupEighths: state.pickup_eighths,
     showBarNumbers: state.show_bar_numbers,
   });
 
@@ -1228,7 +1812,32 @@ function renderScore(response, opts = {}) {
   attachDragHandlers(svg);
 }
 
-function runAnalysisAndRender() {
+function setAnalyzerReadyStatus() {
+  ui.engineStatus.textContent = `Analyzer: Rust/WASM active (${state.analysis_backend})`;
+}
+
+function renderAnalysisFailure(error, requestedBackend) {
+  const failure = buildAnalysisFailureUiModel(requestedBackend, error);
+  const msg = analysisErrorMessage(error);
+  ui.engineStatus.textContent = failure.statusText;
+  ui.warningList.innerHTML = `<li class="warning-item fatal-warning">${failure.warningMessage}</li>`;
+  ui.diagnosticsSummary.textContent = "Analysis failed.";
+  ui.diagnosticsList.innerHTML = `<li class="diag-item error">${msg}</li>`;
+  if (state.show_harmonic_slices) {
+    ui.harmonyCard.hidden = false;
+    ui.harmonyList.innerHTML = `<li class="harmony-item">${failure.warningMessage}</li>`;
+    renderHarmonyDump(null);
+  } else {
+    ui.harmonyCard.hidden = true;
+    ui.harmonyList.innerHTML = "";
+    renderHarmonyDump(null);
+  }
+  lastResponse = null;
+  lastHarmonyRows = [];
+  renderScore({ diagnostics: [], harmonic_slices: [] }, { showDiagnostics: false });
+}
+
+async function runAnalysisAndRender() {
   parseAllVoices();
   const activeEl = document.activeElement;
   const typingInVoiceEditor =
@@ -1242,11 +1851,18 @@ function runAnalysisAndRender() {
 
   const resolvedRules = resolveUiRuleState(presetSchema, state);
   const request = buildAnalysisRequest(state, resolvedRules);
-
-  const response = analyzeRequest(request);
+  let response;
+  try {
+    response = await analyzeRequest(request);
+  } catch (err) {
+    renderAnalysisFailure(err, request?.config?.analysis_backend ?? state.analysis_backend);
+    persistSettings();
+    return;
+  }
   lastResponse = response;
+  setAnalyzerReadyStatus();
 
-  renderScore(response, { showDiagnostics: true });
+  renderScore(response, { showDiagnostics: isRuleCheckerEnabled() });
   renderDiagnostics(response);
   renderWarnings(response);
   renderHarmony(response);
@@ -1255,6 +1871,7 @@ function runAnalysisAndRender() {
 }
 
 function applyCantusTokens(tokens, targetVoiceIndex, opts = {}) {
+  invalidateSourceMusicXml();
   const defaultDuration = opts.defaultDurationEighths ?? 8;
   const parsed = parseVoiceText(tokens, { defaultDurationEighths: defaultDuration });
   if (parsed.notes.length === 0) {
@@ -1292,6 +1909,7 @@ function bindUiEvents() {
   ui.voiceCount.addEventListener("change", () => {
     state.voice_count = Number.parseInt(ui.voiceCount.value, 10);
     state.voices = createDefaultVoices(state.voice_count, state.preset_id);
+    invalidateSourceMusicXml();
     if (Number.isInteger(state.cantus_voice_index) && state.cantus_voice_index >= state.voice_count) {
       state.cantus_voice_index = null;
     }
@@ -1311,11 +1929,46 @@ function bindUiEvents() {
     debounceRender();
   });
 
+  ui.analysisMethodSelect.addEventListener("change", () => {
+    state.analysis_backend = normalizeAnalysisBackend(ui.analysisMethodSelect.value);
+    renderAnalysisControls();
+    debounceRender();
+  });
+
+  ui.ruleCheckerToggle.addEventListener("change", () => {
+    state.rule_checker_enabled = !!ui.ruleCheckerToggle.checked;
+    debounceRender();
+  });
+
+  ui.harmonicRhythmChordsPerBar.addEventListener("change", () => {
+    state.rule_harmonic_rhythm_chords_per_bar = normalizeRuleBasedChordsPerBar(
+      ui.harmonicRhythmChordsPerBar.value,
+    );
+    if (state.analysis_backend === "rule_based") {
+      debounceRender();
+    } else {
+      persistSettings();
+    }
+  });
+
+  ui.augnetDebugToggle.addEventListener("change", () => {
+    if (ui.augnetDebugToggle.disabled) {
+      state.show_augnet_debug = false;
+      ui.augnetDebugToggle.checked = false;
+      return;
+    }
+    state.show_augnet_debug = ui.augnetDebugToggle.checked;
+    if (lastResponse) {
+      renderHarmony(lastResponse);
+    }
+    persistSettings();
+  });
+
   ui.cantusLockToggle.addEventListener("change", () => {
     state.cantus_lock_enabled = ui.cantusLockToggle.checked;
     renderCantusControls();
     renderVoiceEditors();
-    renderScore(lastResponse ?? { diagnostics: [] }, { showDiagnostics: true });
+    renderScore(lastResponse ?? { diagnostics: [] }, { showDiagnostics: isRuleCheckerEnabled() });
     persistSettings();
   });
 
@@ -1339,6 +1992,7 @@ function bindUiEvents() {
   });
 
   ui.addMeasure.addEventListener("click", () => {
+    invalidateSourceMusicXml();
     const m = measureUnitsEighths();
     for (const voice of state.voices) {
       appendRestToVoice(voice, m);
@@ -1348,6 +2002,7 @@ function bindUiEvents() {
   });
 
   ui.removeMeasure.addEventListener("click", () => {
+    invalidateSourceMusicXml();
     const m = measureUnitsEighths();
     for (const voice of state.voices) {
       removeDurationFromEnd(voice, m);
@@ -1359,7 +2014,17 @@ function bindUiEvents() {
   ui.romanToggle.addEventListener("change", () => {
     state.show_roman = ui.romanToggle.checked;
     if (lastResponse) {
+      redrawOverlayLayers(lastResponse, { showDiagnostics: isRuleCheckerEnabled() });
+    }
+    persistSettings();
+  });
+
+  ui.harmonicSlicesToggle.addEventListener("change", () => {
+    state.show_harmonic_slices = ui.harmonicSlicesToggle.checked;
+    if (lastResponse) {
       renderHarmony(lastResponse);
+    } else {
+      renderHarmonyDump(null);
     }
     persistSettings();
   });
@@ -1439,7 +2104,7 @@ function bindUiEvents() {
         return;
       }
       const text = await file.text();
-      const imported = importMusicXml(text, { maxVoices: 4, presetId: state.preset_id });
+      const imported = await importMusicXmlWithWasm(text, { maxVoices: 4, presetId: state.preset_id });
 
       state.voice_count = Math.max(1, Math.min(4, imported.voices.length));
       state.voices =
@@ -1450,6 +2115,9 @@ function bindUiEvents() {
       state.key_tonic_pc = imported.key_tonic_pc;
       state.mode = imported.mode;
       state.time_signature = imported.time_signature;
+      state.pickup_eighths = Number.isFinite(imported.pickup_eighths) ? imported.pickup_eighths : null;
+      state.source_musicxml_raw = text;
+      state.imported_timeline_locked = true;
       if (Number.isInteger(state.cantus_voice_index) && state.cantus_voice_index >= state.voice_count) {
         state.cantus_voice_index = null;
       }
@@ -1485,11 +2153,57 @@ function bindUiEvents() {
     flushPendingRender();
   });
 
-  ui.insertNoteBefore.addEventListener("click", () => insertAtSelection("note", "before"));
-  ui.insertNoteAfter.addEventListener("click", () => insertAtSelection("note", "after"));
-  ui.insertRestBefore.addEventListener("click", () => insertAtSelection("rest", "before"));
-  ui.insertRestAfter.addEventListener("click", () => insertAtSelection("rest", "after"));
+  ui.insertNoteButtons?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-duration][data-rest]");
+    if (!button) return;
+    const duration = normalizeDurationEighths(button.dataset.duration, 2);
+    const isRest = button.dataset.rest === "1";
+    state.insert_template = {
+      is_rest: isRest,
+      duration_eighths: duration,
+    };
+    renderInsertControls();
+    persistSettings();
+  });
+
+  ui.insertRestButtons?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-duration][data-rest]");
+    if (!button) return;
+    const duration = normalizeDurationEighths(button.dataset.duration, 2);
+    const isRest = button.dataset.rest === "1";
+    state.insert_template = {
+      is_rest: isRest,
+      duration_eighths: duration,
+    };
+    renderInsertControls();
+    persistSettings();
+  });
+
+  ui.insertNoteBefore.addEventListener("click", () => insertAtSelection("before"));
+  ui.insertNoteAfter.addEventListener("click", () => insertAtSelection("after"));
+  ui.replaceSelectedNote.addEventListener("click", () => replaceSelected());
+  ui.toggleSelectedDot.addEventListener("click", () => toggleSelectedDot());
+  ui.toggleSelectedTie.addEventListener("click", () => toggleSelectedTieStart());
   ui.deleteSelectedNote.addEventListener("click", () => deleteSelectedNote());
+  ui.copyHarmonyDump?.addEventListener("click", async () => {
+    const text = ui.harmonyDump?.value ?? "";
+    if (!text) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        ui.harmonyDump.focus();
+        ui.harmonyDump.select();
+        document.execCommand("copy");
+      }
+      ui.copyHarmonyDump.textContent = "Copied";
+      window.setTimeout(() => {
+        if (ui.copyHarmonyDump) ui.copyHarmonyDump.textContent = "Copy Harmony Output";
+      }, 1100);
+    } catch (err) {
+      console.error("Failed to copy harmony dump", err);
+    }
+  });
 
   ui.diagnosticsList.addEventListener("click", (event) => {
     const row = event.target.closest(".diag-item[data-diag-index]");
@@ -1557,6 +2271,8 @@ async function boot() {
 
   renderPresetControls();
   renderKeyControls();
+  renderAnalysisControls();
+  renderInsertControls();
   renderCantusControls();
   rerenderSavedProfilesSelect();
   ui.ruleFilter.value = state.rule_filter;
@@ -1567,7 +2283,7 @@ async function boot() {
   }
 
   await initAnalyzer();
-  ui.engineStatus.textContent = "Analyzer: Rust/WASM active";
+  setAnalyzerReadyStatus();
 
   bindUiEvents();
 
